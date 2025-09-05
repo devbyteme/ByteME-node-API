@@ -1,0 +1,39 @@
+name: build and push
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE: ghcr.io/thedocklar/byteme-nodeapi
+      TIMESTAMP: ${{ github.run_number }}-${{ github.sha }}
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # - name: Write Secret to File
+      #   run: echo "${{ secrets.ENVSECRET }}" > .env
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Build and push image
+        run: |
+          docker build -t ${{ env.IMAGE }}:${{ env.TIMESTAMP }} -t ${{ env.IMAGE }}:latest .
+          docker push ${{ env.IMAGE }}:${{ env.TIMESTAMP }}
+          docker push ${{ env.IMAGE }}:latest
