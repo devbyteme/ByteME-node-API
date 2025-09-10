@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken, requireVendor, optionalAuth } = require('../middleware/auth');
 
-// Import order controller (to be created)
+// Import order controller
 const orderController = require('../controllers/orderController');
 
 // ==================== ORDER ROUTES ====================
@@ -15,6 +15,7 @@ router.get('/orders', authenticateToken, requireVendor, orderController.getAllOr
 router.put('/orders/:id', authenticateToken, requireVendor, orderController.updateOrder);
 router.delete('/orders/:id', authenticateToken, requireVendor, orderController.deleteOrder);
 router.patch('/orders/:id/status', authenticateToken, requireVendor, orderController.updateOrderStatus);
+router.patch('/orders/:id/payment-status', authenticateToken, requireVendor, orderController.updatePaymentStatus);
 
 // Special routes
 router.get('/orders/today', authenticateToken, requireVendor, orderController.getTodayOrders);

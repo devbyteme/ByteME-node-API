@@ -1,5 +1,8 @@
 const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
+const Vendor = require('../models/Vendor');
+const User = require('../models/User');
+const { sendOrderConfirmationEmail, sendNewOrderNotificationEmail } = require('../services/emailService');
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -86,6 +89,33 @@ const createOrder = async (req, res) => {
 
     // Populate vendor info
     await order.populate('vendorId', 'name');
+
+    // Send email notifications (async, don't wait for completion)
+    setImmediate(async () => {
+      try {
+        // Get vendor details for email
+        const vendor = await Vendor.findById(vendorId).select('name email');
+        
+        if (vendor && vendor.email) {
+          // Send notification to vendor
+          await sendNewOrderNotificationEmail(vendor.email, vendor.name, order);
+          console.log(`New order notification sent to vendor: ${vendor.email}`);
+        }
+
+        // Send confirmation to customer if they have an email
+        if (customerId) {
+          const customer = await User.findById(customerId).select('email firstName lastName');
+          if (customer && customer.email) {
+            const customerName = customer.firstName ? `${customer.firstName} ${customer.lastName || ''}`.trim() : 'Valued Customer';
+            await sendOrderConfirmationEmail(customer.email, customerName, order);
+            console.log(`Order confirmation sent to customer: ${customer.email}`);
+          }
+        }
+      } catch (emailError) {
+        console.error('Error sending email notifications:', emailError);
+        // Don't fail the order creation if emails fail
+      }
+    });
 
     res.status(201).json({
       success: true,
@@ -378,6 +408,11 @@ const updateOrderStatus = async (req, res) => {
       order.actualPreparationTime = Date.now() - order.createdAt;
     }
 
+    // Mark as paid when order is served (completed)
+    if (status === 'served') {
+      order.paymentStatus = 'paid';
+    }
+
     await order.save();
 
     res.json({
@@ -388,6 +423,60 @@ const updateOrderStatus = async (req, res) => {
 
   } catch (error) {
     console.error('Error updating order status:', error);
+    
+    if (error.kind === 'ObjectId') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
+// @desc    Update payment status
+// @route   PATCH /api/orders/:id/payment-status
+// @access  Private (Vendor only)
+const updatePaymentStatus = async (req, res) => {
+  try {
+    const { paymentStatus } = req.body;
+
+    if (!['pending', 'paid', 'refunded'].includes(paymentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment status. Must be one of: pending, paid, refunded'
+      });
+    }
+
+    // Find order and ensure it belongs to the authenticated vendor
+    const order = await Order.findOne({
+      _id: req.params.id,
+      vendorId: req.user._id
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found or access denied'
+      });
+    }
+
+    order.paymentStatus = paymentStatus;
+    await order.save();
+
+    res.json({
+      success: true,
+      message: `Payment status updated to ${paymentStatus}`,
+      data: order
+    });
+
+  } catch (error) {
+    console.error('Error updating payment status:', error);
     
     if (error.kind === 'ObjectId') {
       return res.status(400).json({
@@ -541,6 +630,7 @@ module.exports = {
   updateOrder,
   deleteOrder,
   updateOrderStatus,
+  updatePaymentStatus,
   getTodayOrders,
   getOrdersByStatus,
   getOrdersByTable

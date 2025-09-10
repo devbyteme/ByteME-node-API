@@ -173,12 +173,36 @@ const getDashboardStats = async (req, res) => {
       Order.countDocuments()
     ]);
 
-    // Calculate total revenue
+    console.log('Basic counts:', { totalVendors, totalCustomers, totalOrders });
+
+    // Check order payment statuses
+    const orderStatusCounts = await Order.aggregate([
+      {
+        $group: {
+          _id: '$paymentStatus',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$totalAmount' }
+        }
+      }
+    ]);
+    console.log('Order payment status counts:', orderStatusCounts);
+
+    // Calculate total revenue (include all orders for demo purposes)
+    console.log('Calculating total revenue for all vendors...');
     const revenueResult = await Order.aggregate([
-      { $match: { paymentStatus: 'paid' } },
       { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
     ]);
     const totalRevenue = revenueResult.length > 0 ? revenueResult[0].totalRevenue : 0;
+    console.log('Revenue aggregation result:', revenueResult);
+    console.log('Total revenue calculated:', totalRevenue);
+
+    // Also calculate paid revenue for comparison
+    const paidRevenueResult = await Order.aggregate([
+      { $match: { paymentStatus: 'paid' } },
+      { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+    ]);
+    const paidRevenue = paidRevenueResult.length > 0 ? paidRevenueResult[0].totalRevenue : 0;
+    console.log('Paid revenue calculated:', paidRevenue);
 
     // Get growth data (last 30 days vs previous 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -200,24 +224,45 @@ const getDashboardStats = async (req, res) => {
       Order.countDocuments({ createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } })
     ]);
 
+    // Calculate revenue growth (last 30 days vs previous 30 days) - using all orders
+    const [recentRevenue, previousRevenue] = await Promise.all([
+      Order.aggregate([
+        { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+      ]),
+      Order.aggregate([
+        { $match: { createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } } },
+        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+      ])
+    ]);
+
+    const recentRevenueAmount = recentRevenue.length > 0 ? recentRevenue[0].totalRevenue : 0;
+    const previousRevenueAmount = previousRevenue.length > 0 ? previousRevenue[0].totalRevenue : 0;
+    const revenueGrowth = previousRevenueAmount > 0 ? ((recentRevenueAmount - previousRevenueAmount) / previousRevenueAmount * 100) : 0;
+
     // Calculate growth percentages
     const vendorGrowth = previousVendors > 0 ? ((recentVendors - previousVendors) / previousVendors * 100) : 0;
     const customerGrowth = previousCustomers > 0 ? ((recentCustomers - previousCustomers) / previousCustomers * 100) : 0;
     const orderGrowth = previousOrders > 0 ? ((recentOrders - previousOrders) / previousOrders * 100) : 0;
 
+    const dashboardData = {
+      totalVendors,
+      totalCustomers,
+      totalOrders,
+      totalRevenue,
+      growth: {
+        vendors: Math.round(vendorGrowth * 100) / 100,
+        customers: Math.round(customerGrowth * 100) / 100,
+        orders: Math.round(orderGrowth * 100) / 100,
+        revenue: Math.round(revenueGrowth * 100) / 100
+      }
+    };
+
+    console.log('Admin Dashboard Stats:', dashboardData);
+
     res.json({
       success: true,
-      data: {
-        totalVendors,
-        totalCustomers,
-        totalOrders,
-        totalRevenue,
-        growth: {
-          vendors: Math.round(vendorGrowth * 100) / 100,
-          customers: Math.round(customerGrowth * 100) / 100,
-          orders: Math.round(orderGrowth * 100) / 100
-        }
-      }
+      data: dashboardData
     });
 
   } catch (error) {
@@ -254,10 +299,9 @@ const getRevenueStats = async (req, res) => {
 
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    // Build match criteria
+    // Build match criteria (include all orders for demo purposes)
     const matchCriteria = {
-      createdAt: { $gte: startDate },
-      paymentStatus: 'paid'
+      createdAt: { $gte: startDate }
     };
 
     // Add vendor filter if specified
@@ -297,6 +341,9 @@ const getRevenueStats = async (req, res) => {
         orders: existingData ? existingData.orders : 0
       });
     }
+
+    console.log('Revenue Stats Query:', { period, vendorId, days, startDate });
+    console.log('Revenue Stats Result:', result);
 
     res.json({
       success: true,
@@ -590,6 +637,112 @@ const getOrderStats = async (req, res) => {
   }
 };
 
+// @desc    Get vendor-specific dashboard statistics
+// @route   GET /api/admin/vendor-dashboard-stats/:vendorId
+// @access  Private (Admin)
+const getVendorDashboardStats = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    
+    if (!vendorId || vendorId === 'all') {
+      return res.status(400).json({
+        success: false,
+        message: 'Vendor ID is required'
+      });
+    }
+
+    // Validate vendor exists
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vendor not found'
+      });
+    }
+
+    // Get vendor-specific counts
+    const [totalOrders, totalRevenue] = await Promise.all([
+      Order.countDocuments({ vendorId: new mongoose.Types.ObjectId(vendorId) }),
+      Order.aggregate([
+        { $match: { vendorId: new mongoose.Types.ObjectId(vendorId) } },
+        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+      ])
+    ]);
+
+    const revenue = totalRevenue.length > 0 ? totalRevenue[0].totalRevenue : 0;
+
+    // Get growth data (last 30 days vs previous 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+
+    const [recentOrders, previousOrders] = await Promise.all([
+      Order.countDocuments({ 
+        vendorId: new mongoose.Types.ObjectId(vendorId),
+        createdAt: { $gte: thirtyDaysAgo }
+      }),
+      Order.countDocuments({ 
+        vendorId: new mongoose.Types.ObjectId(vendorId),
+        createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo }
+      })
+    ]);
+
+    // Calculate revenue growth
+    const [recentRevenue, previousRevenue] = await Promise.all([
+      Order.aggregate([
+        { 
+          $match: { 
+            vendorId: new mongoose.Types.ObjectId(vendorId),
+            createdAt: { $gte: thirtyDaysAgo }
+          }
+        },
+        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+      ]),
+      Order.aggregate([
+        { 
+          $match: { 
+            vendorId: new mongoose.Types.ObjectId(vendorId),
+            createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo }
+          }
+        },
+        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+      ])
+    ]);
+
+    const recentRevenueAmount = recentRevenue.length > 0 ? recentRevenue[0].totalRevenue : 0;
+    const previousRevenueAmount = previousRevenue.length > 0 ? previousRevenue[0].totalRevenue : 0;
+    const revenueGrowth = previousRevenueAmount > 0 ? ((recentRevenueAmount - previousRevenueAmount) / previousRevenueAmount * 100) : 0;
+
+    // Calculate growth percentages
+    const orderGrowth = previousOrders > 0 ? ((recentOrders - previousOrders) / previousOrders * 100) : 0;
+
+    const vendorStats = {
+      vendorId,
+      vendorName: vendor.name,
+      totalOrders,
+      totalRevenue: revenue,
+      growth: {
+        orders: Math.round(orderGrowth * 100) / 100,
+        revenue: Math.round(revenueGrowth * 100) / 100
+      }
+    };
+
+    console.log('Vendor Dashboard Stats:', vendorStats);
+
+    res.json({
+      success: true,
+      data: vendorStats
+    });
+
+  } catch (error) {
+    console.error('Error getting vendor dashboard stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
 // @desc    Get all vendors for dropdown
 // @route   GET /api/admin/vendors
 // @access  Private (Admin)
@@ -618,6 +771,7 @@ module.exports = {
   registerAdmin,
   loginAdmin,
   getDashboardStats,
+  getVendorDashboardStats,
   getRevenueStats,
   getVendorStats,
   getCustomerStats,

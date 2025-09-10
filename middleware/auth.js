@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Vendor = require('../models/Vendor');
 const Admin = require('../models/Admin');
+const { isBlacklisted } = require('./tokenBlacklist');
 
 // Middleware to authenticate JWT token
 const authenticateToken = async (req, res, next) => {
@@ -13,6 +14,14 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({
         success: false,
         message: 'Access token is required'
+      });
+    }
+
+    // Check if token is blacklisted
+    if (isBlacklisted(token)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token has been invalidated'
       });
     }
 

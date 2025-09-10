@@ -4,6 +4,7 @@ const {
   registerAdmin,
   loginAdmin,
   getDashboardStats,
+  getVendorDashboardStats,
   getRevenueStats,
   getVendorStats,
   getCustomerStats,
@@ -18,6 +19,7 @@ router.post('/auth/admin/login', loginAdmin);
 
 // Protected admin routes
 router.get('/admin/dashboard-stats', protect, adminOnly, getDashboardStats);
+router.get('/admin/vendor-dashboard-stats/:vendorId', protect, adminOnly, getVendorDashboardStats);
 router.get('/admin/revenue-stats', protect, adminOnly, getRevenueStats);
 router.get('/admin/vendor-stats', protect, adminOnly, getVendorStats);
 router.get('/admin/customer-stats', protect, adminOnly, getCustomerStats);

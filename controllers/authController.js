@@ -322,9 +322,17 @@ const changePassword = async (req, res) => {
 // @access  Private
 const logout = async (req, res) => {
   try {
-    // In a JWT-based system, logout is typically handled client-side
-    // by removing the token. However, you could implement a blacklist
-    // or use shorter token expiration times for better security.
+    const { addToBlacklist } = require('../middleware/tokenBlacklist');
+    
+    // Get the token from the request
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    
+    if (token) {
+      // Add token to blacklist to invalidate it
+      addToBlacklist(token);
+      console.log('🔐 User logged out, token blacklisted:', req.user._id);
+    }
     
     res.json({
       success: true,
