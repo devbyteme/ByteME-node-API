@@ -17,20 +17,20 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    // Check if token is blacklisted
-    if (isBlacklisted(token)) {
-      return res.status(401).json({
-        success: false,
-        message: 'Token has been invalidated'
-      });
-    }
-
-    // Verify token
+    // Verify token first to get user type
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     console.log('🔐 Auth Middleware: Token decoded:', { userId: decoded.id || decoded.userId, userType: decoded.userType });
     
     // Set userType from token
     req.userType = decoded.userType;
+    
+    // Check if token is blacklisted for this specific user type
+    if (isBlacklisted(token, decoded.userType)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token has been invalidated'
+      });
+    }
     
     // Find user based on userType in token
     let user = null;
@@ -157,6 +157,12 @@ const optionalAuth = async (req, res, next) => {
       
       // Set userType from token
       req.userType = decoded.userType;
+      
+      // Check if token is blacklisted for this specific user type
+      if (isBlacklisted(token, decoded.userType)) {
+        console.log('🔐 Optional Auth: Token is blacklisted for userType:', decoded.userType);
+        return next(); // Continue without user info
+      }
       
       // Find user based on userType in token
       let user = null;

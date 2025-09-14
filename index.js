@@ -12,8 +12,13 @@ const port = process.env.PORT || 3000;
 connectDB();
 
 // Middleware
+// Parse CORS origins from environment variable
+const corsOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
+  : ['http://localhost:5173', 'http://localhost:3000']; // Default fallback
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3002'], // Frontend URLs including admin portal
+  origin: corsOrigins,
   credentials: true
 }));
 app.use(express.json());
@@ -147,5 +152,5 @@ app.use((err, req, res, next) => {
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
   console.log('Environment:', process.env.NODE_ENV || 'development');
-  console.log('Frontend URLs allowed:', ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3002']);
+  console.log('CORS Origins allowed:', corsOrigins);
 });

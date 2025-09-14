@@ -329,9 +329,10 @@ const logout = async (req, res) => {
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
     
     if (token) {
-      // Add token to blacklist to invalidate it
-      addToBlacklist(token);
-      console.log('🔐 User logged out, token blacklisted:', req.user._id);
+      // Add token to blacklist with user type to invalidate it
+      // This ensures customer logout doesn't affect vendor tokens and vice versa
+      addToBlacklist(token, req.userType);
+      console.log('🔐 User logged out, token blacklisted:', req.user._id, 'userType:', req.userType);
     }
     
     res.json({
