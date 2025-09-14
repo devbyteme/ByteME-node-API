@@ -17,10 +17,10 @@ const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
   : ['http://localhost:5173', 'http://localhost:3000']; // Default fallback
 
-app.use(cors({
-  origin: corsOrigins,
-  credentials: true
-}));
+  app.use(cors({
+    origin: true, // Allow all origins
+    credentials: true
+  }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
