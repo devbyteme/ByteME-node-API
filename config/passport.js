@@ -23,12 +23,13 @@ passport.deserializeUser(async (id, done) => {
 passport.use('google', new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: `${process.env.BASE_URL}/api/auth/google/callback`,
+  callbackURL: `https://byteme.rootfo.com/api/auth/google/callback`,
   scope: ['profile', 'email']
 }, async (accessToken, refreshToken, profile, done) => {
   try {
     // Check if vendor already exists
     let vendor = await Vendor.findOne({ email: profile.emails[0].value });
+    console.log('callbackURL',callbackURL)
     
     if (!vendor) {
       // Create new vendor account
