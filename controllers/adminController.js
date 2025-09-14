@@ -7,6 +7,19 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const { sendAdminWelcomeEmail } = require('../services/emailService');
 
+// Non-blocking email helper function
+const sendEmailAsync = async (emailFunction, ...args) => {
+  setImmediate(async () => {
+    try {
+      await emailFunction(...args);
+      console.log('Email sent successfully');
+    } catch (error) {
+      console.error('Email sending failed (non-blocking):', error.message);
+      // Don't throw error - just log it
+    }
+  });
+};
+
 // Generate JWT token for admin
 const generateAdminToken = (admin) => {
   return jwt.sign(
@@ -56,13 +69,8 @@ const registerAdmin = async (req, res) => {
 
     await admin.save();
 
-    // Send welcome email
-    try {
-      await sendAdminWelcomeEmail(admin.email, admin.name);
-    } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError);
-      // Don't fail registration if email fails
-    }
+    // Send welcome email (non-blocking)
+    sendEmailAsync(sendAdminWelcomeEmail, admin.email, admin.name);
 
     res.status(201).json({
       success: true,

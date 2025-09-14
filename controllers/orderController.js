@@ -4,6 +4,19 @@ const Vendor = require('../models/Vendor');
 const User = require('../models/User');
 const { sendOrderConfirmationEmail, sendNewOrderNotificationEmail } = require('../services/emailService');
 
+// Non-blocking email helper function
+const sendEmailAsync = async (emailFunction, ...args) => {
+  setImmediate(async () => {
+    try {
+      await emailFunction(...args);
+      console.log('Email sent successfully');
+    } catch (error) {
+      console.error('Email sending failed (non-blocking):', error.message);
+      // Don't throw error - just log it
+    }
+  });
+};
+
 // @desc    Create new order
 // @route   POST /api/orders
 // @access  Public (optional authentication)

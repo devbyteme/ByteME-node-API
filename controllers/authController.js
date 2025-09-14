@@ -10,6 +10,19 @@ const {
   sendAdminWelcomeEmail 
 } = require('../services/emailService');
 
+// Non-blocking email helper function
+const sendEmailAsync = async (emailFunction, ...args) => {
+  setImmediate(async () => {
+    try {
+      await emailFunction(...args);
+      console.log('Email sent successfully');
+    } catch (error) {
+      console.error('Email sending failed (non-blocking):', error.message);
+      // Don't throw error - just log it
+    }
+  });
+};
+
 // @desc    Register vendor
 // @route   POST /api/auth/vendor/register
 // @access  Public
@@ -39,13 +52,8 @@ const registerVendor = async (req, res) => {
 
     await vendor.save();
 
-    // Send welcome email
-    try {
-      await sendVendorWelcomeEmail(vendor.email, vendor.name);
-    } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError);
-      // Don't fail registration if email fails
-    }
+    // Send welcome email (non-blocking)
+    sendEmailAsync(sendVendorWelcomeEmail, vendor.email, vendor.name);
 
     // Generate JWT token
     const token = generateToken(vendor);
@@ -401,13 +409,8 @@ const registerUser = async (req, res) => {
 
     await user.save();
 
-    // Send welcome email
-    try {
-      await sendCustomerWelcomeEmail(user.email, `${user.firstName} ${user.lastName}`);
-    } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError);
-      // Don't fail registration if email fails
-    }
+    // Send welcome email (non-blocking)
+    sendEmailAsync(sendCustomerWelcomeEmail, user.email, `${user.firstName} ${user.lastName}`);
 
     // Generate JWT token for customer
     const token = generateCustomerToken(user);
@@ -521,30 +524,18 @@ const forgotPassword = async (req, res) => {
     const resetToken = vendor.generatePasswordResetToken();
     await vendor.save();
 
-    try {
-      // Send password reset email
-      await sendPasswordResetEmail(vendor.email, resetToken);
-      
-      res.json({
-        success: true,
-        message: 'Password reset email sent successfully',
-        data: {
-          email: vendor.email,
-          resetTokenExpiry: vendor.resetPasswordExpires
-        }
-      });
-    } catch (emailError) {
-      // If email fails, clear the reset token
-      vendor.resetPasswordToken = undefined;
-      vendor.resetPasswordExpires = undefined;
-      await vendor.save();
-      
-      console.error('Email sending failed:', emailError);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to send reset email. Please try again later.'
-      });
-    }
+    // Send password reset email (non-blocking)
+    sendEmailAsync(sendPasswordResetEmail, vendor.email, resetToken);
+    
+    // Always return success regardless of email status
+    res.json({
+      success: true,
+      message: 'If an account with that email exists, a password reset link has been sent',
+      data: {
+        email: vendor.email,
+        resetTokenExpiry: vendor.resetPasswordExpires
+      }
+    });
 
   } catch (error) {
     console.error('Error in forgot password:', error);
@@ -593,30 +584,18 @@ const customerForgotPassword = async (req, res) => {
     const resetToken = customer.generatePasswordResetToken();
     await customer.save();
 
-    try {
-      // Send password reset email
-      await sendPasswordResetEmail(customer.email, resetToken);
-      
-      res.json({
-        success: true,
-        message: 'Password reset email sent successfully',
-        data: {
-          email: customer.email,
-          resetTokenExpiry: customer.resetPasswordExpires
-        }
-      });
-    } catch (emailError) {
-      // If email fails, clear the reset token
-      customer.resetPasswordToken = undefined;
-      customer.resetPasswordExpires = undefined;
-      await customer.save();
-      
-      console.error('Email sending failed:', emailError);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to send reset email. Please try again later.'
-      });
-    }
+    // Send password reset email (non-blocking)
+    sendEmailAsync(sendPasswordResetEmail, customer.email, resetToken);
+    
+    // Always return success regardless of email status
+    res.json({
+      success: true,
+      message: 'If an account with that email exists, a password reset link has been sent',
+      data: {
+        email: customer.email,
+        resetTokenExpiry: customer.resetPasswordExpires
+      }
+    });
 
   } catch (error) {
     console.error('Error in customer forgot password:', error);
@@ -666,30 +645,18 @@ const adminForgotPassword = async (req, res) => {
     const resetToken = admin.generatePasswordResetToken();
     await admin.save();
 
-    try {
-      // Send password reset email
-      await sendPasswordResetEmail(admin.email, resetToken);
-      
-      res.json({
-        success: true,
-        message: 'Password reset email sent successfully',
-        data: {
-          email: admin.email,
-          resetTokenExpiry: admin.resetPasswordExpires
-        }
-      });
-    } catch (emailError) {
-      // If email fails, clear the reset token
-      admin.resetPasswordToken = undefined;
-      admin.resetPasswordExpires = undefined;
-      await admin.save();
-      
-      console.error('Email sending failed:', emailError);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to send reset email. Please try again later.'
-      });
-    }
+    // Send password reset email (non-blocking)
+    sendEmailAsync(sendPasswordResetEmail, admin.email, resetToken);
+    
+    // Always return success regardless of email status
+    res.json({
+      success: true,
+      message: 'If an account with that email exists, a password reset link has been sent',
+      data: {
+        email: admin.email,
+        resetTokenExpiry: admin.resetPasswordExpires
+      }
+    });
 
   } catch (error) {
     console.error('Error in admin forgot password:', error);
