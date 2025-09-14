@@ -29,7 +29,6 @@ passport.use('google', new GoogleStrategy({
   try {
     // Check if vendor already exists
     let vendor = await Vendor.findOne({ email: profile.emails[0].value });
-    console.log('callbackURL',callbackURL)
     
     if (!vendor) {
       // Create new vendor account
