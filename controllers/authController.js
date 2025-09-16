@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Vendor = require('../models/Vendor');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { generateToken, generateCustomerToken } = require('../config/passport');
+const { generateToken, generateCustomerToken, generateAdminToken } = require('../config/passport');
 const { 
   sendPasswordResetEmail, 
   sendVendorWelcomeEmail, 
@@ -873,11 +873,48 @@ const adminResetPassword = async (req, res) => {
     }
 };
 
+// @desc    Handle admin Google OAuth callback
+// @route   GET /api/auth/google/admin/callback
+const adminGoogleCallback = async (req, res) => {
+  try {
+    console.log('🔐 Backend: Admin Google OAuth callback triggered');
+    
+    if (!req.user) {
+      console.log('🔐 Backend: No user in admin Google OAuth callback');
+      return res.redirect(`${process.env.ADMIN_FRONTEND_URL || 'http://localhost:5173'}/login?error=Google authentication failed`);
+    }
+
+    const admin = req.user;
+    console.log('🔐 Backend: Admin Google OAuth callback for user:', admin.email, 'userType:', admin.userType);
+
+    // Generate JWT token for admin
+    const token = generateAdminToken(admin);
+    
+    // Prepare user data for frontend
+    const userData = encodeURIComponent(JSON.stringify({
+      id: admin._id,
+      name: admin.name,
+      email: admin.email,
+      role: admin.role,
+      permissions: admin.permissions,
+      userType: 'admin'
+    }));
+
+    const frontendUrl = process.env.ADMIN_FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/login?token=${token}&googleAuth=true&userData=${userData}`);
+  } catch (error) {
+    console.error('🔐 Backend: Admin Google OAuth callback error:', error);
+    const frontendUrl = process.env.ADMIN_FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/login?error=Google authentication failed`);
+  }
+};
+
 module.exports = {
   registerVendor,
   loginVendor,
   googleCallback,
   customerGoogleCallback,
+  adminGoogleCallback,
   getProfile,
   changePassword,
   logout,

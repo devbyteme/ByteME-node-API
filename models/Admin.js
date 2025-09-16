@@ -18,8 +18,15 @@ const adminSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    required: function() {
+      return !this.googleId; // Password not required if Google OAuth user
+    },
     minlength: [6, 'Password must be at least 6 characters long']
+  },
+  googleId: {
+    type: String,
+    sparse: true, // Allow multiple admins without googleId
+    unique: true
   },
   role: {
     type: String,
@@ -63,9 +70,14 @@ adminSchema.virtual('isLocked').get(function() {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
 
-// Hash password before saving
+// Hash password before saving (only if password is modified and not from Google OAuth)
 adminSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
+  
+  // Don't hash password if it's a Google OAuth user with a random password
+  if (this.googleId && this.password.length === 16) {
+    return next();
+  }
   
   try {
     const salt = await bcrypt.genSalt(12);

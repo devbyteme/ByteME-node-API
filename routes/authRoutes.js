@@ -8,6 +8,7 @@ const {
   loginVendor,
   googleCallback,
   customerGoogleCallback,
+  adminGoogleCallback,
   getProfile,
   changePassword,
   logout,
@@ -55,6 +56,10 @@ router.get('/google/customer', passport.authenticate('google-customer', {
   passReqToCallback: true
 }));
 router.get('/google/customer/callback', passport.authenticate('google-customer', { session: false }), customerGoogleCallback);
+
+// Admin Google OAuth
+router.get('/google/admin', passport.authenticate('google-admin', { scope: ['profile', 'email'] }));
+router.get('/google/admin/callback', passport.authenticate('google-admin', { session: false }), adminGoogleCallback);
 
 // ==================== PROTECTED ROUTES ====================
 router.get('/me', authenticateToken, getProfile);

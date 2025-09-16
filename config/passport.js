@@ -2,6 +2,7 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const Vendor = require('../models/Vendor');
 const User = require('../models/User');
+const Admin = require('../models/Admin');
 const jwt = require('jsonwebtoken');
 
 // Serialize user for the session
@@ -112,6 +113,52 @@ passport.use('google-customer', new GoogleStrategy({
   }
 }));
 
+// Admin Google OAuth Strategy
+passport.use('google-admin', new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: `https://byteme.rootfo.com/api/auth/google/admin/callback`,
+  passReqToCallback: true
+}, async (req, accessToken, refreshToken, profile, done) => {
+  try {
+    console.log('🔐 Passport: Admin Google OAuth strategy called for:', profile.emails[0].value);
+    
+    const email = profile.emails[0].value;
+    const name = profile.displayName;
+    
+    // Check if admin already exists
+    let admin = await Admin.findOne({ email });
+    
+    if (!admin) {
+      // Create new admin
+      admin = new Admin({
+        name,
+        email,
+        googleId: profile.id,
+        // Generate a random password for Google users
+        password: Math.random().toString(36).slice(-16)
+      });
+      await admin.save();
+      console.log('🔐 Passport: New admin created:', admin.email);
+    } else if (!admin.googleId) {
+      // Link existing admin account with Google
+      admin.googleId = profile.id;
+      await admin.save();
+      console.log('🔐 Passport: Existing admin linked with Google:', admin.email);
+    } else {
+      console.log('🔐 Passport: Existing admin with Google found:', admin.email);
+    }
+    
+    // Set userType for admin
+    admin.userType = 'admin';
+    
+    return done(null, admin);
+  } catch (error) {
+    console.error('🔐 Passport: Error in admin Google OAuth strategy:', error);
+    return done(error, null);
+  }
+}));
+
 // Generate JWT token for vendors
 const generateToken = (user) => {
   return jwt.sign(
@@ -130,4 +177,13 @@ const generateCustomerToken = (user) => {
   );
 };
 
-module.exports = { passport, generateToken, generateCustomerToken };
+// Generate JWT token for admins
+const generateAdminToken = (user) => {
+  return jwt.sign(
+    { userId: user._id, userType: 'admin' },
+    process.env.JWT_SECRET || 'your-secret-key',
+    { expiresIn: '7d' }
+  );
+};
+
+module.exports = { passport, generateToken, generateCustomerToken, generateAdminToken };
