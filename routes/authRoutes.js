@@ -10,6 +10,7 @@ const {
   customerGoogleCallback,
   adminGoogleCallback,
   getProfile,
+  updateProfile,
   changePassword,
   logout,
   refreshToken,
@@ -63,6 +64,7 @@ router.get('/google/admin/callback', passport.authenticate('google-admin', { ses
 
 // ==================== PROTECTED ROUTES ====================
 router.get('/me', authenticateToken, getProfile);
+router.put('/me', authenticateToken, updateProfile);
 router.put('/change-password', authenticateToken, changePassword);
 router.post('/logout', authenticateToken, logout);
 router.post('/refresh', authenticateToken, refreshToken);

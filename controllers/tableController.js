@@ -80,6 +80,7 @@ const createTable = async (req, res) => {
     const {
       number,
       location,
+      capacity,
       vendorId
     } = req.body;
 
@@ -88,6 +89,13 @@ const createTable = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Table number is required'
+      });
+    }
+
+    if (!capacity || capacity < 1 || capacity > 20) {
+      return res.status(400).json({
+        success: false,
+        message: 'Table capacity is required and must be between 1 and 20'
       });
     }
 
@@ -116,6 +124,7 @@ const createTable = async (req, res) => {
     const table = new Table({
       number: number.trim(),
       location: location ? location.trim() : 'indoor',
+      capacity: parseInt(capacity),
       vendorId: actualVendorId
     });
 
@@ -160,6 +169,7 @@ const updateTable = async (req, res) => {
     const {
       number,
       location,
+      capacity,
       status
     } = req.body;
 
@@ -195,6 +205,15 @@ const updateTable = async (req, res) => {
     // Update fields
     if (number !== undefined) table.number = number.trim();
     if (location !== undefined) table.location = location ? location.trim() : 'indoor';
+    if (capacity !== undefined) {
+      if (capacity < 1 || capacity > 20) {
+        return res.status(400).json({
+          success: false,
+          message: 'Table capacity must be between 1 and 20'
+        });
+      }
+      table.capacity = parseInt(capacity);
+    }
     if (status !== undefined) table.status = status;
 
     await table.save();

@@ -269,6 +269,70 @@ const getProfile = async (req, res) => {
   }
 };
 
+// @desc    Update current user profile
+// @route   PUT /api/auth/me
+// @access  Private
+const updateProfile = async (req, res) => {
+  try {
+    let user;
+    
+    if (req.userType === 'vendor') {
+      user = await Vendor.findById(req.user._id);
+    } else {
+      user = await User.findById(req.user._id);
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update fields based on user type
+    if (req.userType === 'vendor') {
+      // For vendors, only allow updating phone
+      if (req.body.phone !== undefined) {
+        user.phone = req.body.phone;
+      }
+    } else {
+      // For regular users, allow updating firstName, lastName, phone
+      const updateFields = ['firstName', 'lastName', 'phone'];
+      updateFields.forEach(field => {
+        if (req.body[field] !== undefined) {
+          user[field] = req.body[field];
+        }
+      });
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: user.getPublicProfile ? user.getPublicProfile() : user
+    });
+
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: validationErrors
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
 // @desc    Change password
 // @route   PUT /api/auth/change-password
 // @access  Private
@@ -916,6 +980,7 @@ module.exports = {
   customerGoogleCallback,
   adminGoogleCallback,
   getProfile,
+  updateProfile,
   changePassword,
   logout,
   refreshToken,

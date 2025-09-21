@@ -141,9 +141,59 @@ const deleteVendor = async (req, res) => {
   }
 };
 
+// @desc    Update vendor profile (for authenticated vendor)
+// @route   PUT /api/vendors/profile
+// @access  Private (Vendor only)
+const updateVendorProfile = async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.user._id);
+    
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vendor not found'
+      });
+    }
+
+    // Update fields
+    const updateFields = ['name', 'description', 'cuisine', 'phone', 'location'];
+    updateFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        vendor[field] = req.body[field];
+      }
+    });
+
+    await vendor.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Vendor profile updated successfully',
+      data: vendor.getPublicProfile()
+    });
+
+  } catch (error) {
+    console.error('Error updating vendor profile:', error);
+    
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: validationErrors
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   getAllVendors,
   getVendorById,
   updateVendor,
-  deleteVendor
+  deleteVendor,
+  updateVendorProfile
 }; 

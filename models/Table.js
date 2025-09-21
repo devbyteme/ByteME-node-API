@@ -16,6 +16,12 @@ const tableSchema = new mongoose.Schema({
     trim: true,
     default: 'indoor'
   },
+  capacity: {
+    type: Number,
+    required: [true, 'Table capacity is required'],
+    min: [1, 'Table capacity must be at least 1'],
+    max: [20, 'Table capacity cannot exceed 20']
+  },
   qrCode: {
     type: String,
     default: null
