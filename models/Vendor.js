@@ -92,6 +92,20 @@ const vendorSchema = new mongoose.Schema({
   },
   images: [String],
   documents: [String], // For business licenses, permits, etc.
+  billingSettings: {
+    taxRate: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    },
+    serviceChargeRate: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    }
+  },
   resetPasswordToken: String,
   resetPasswordExpires: Date,
   createdAt: {

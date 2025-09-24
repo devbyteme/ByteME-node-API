@@ -156,7 +156,7 @@ const updateVendorProfile = async (req, res) => {
     }
 
     // Update fields
-    const updateFields = ['name', 'description', 'cuisine', 'phone', 'location'];
+    const updateFields = ['name', 'description', 'cuisine', 'phone', 'location', 'billingSettings'];
     updateFields.forEach(field => {
       if (req.body[field] !== undefined) {
         vendor[field] = req.body[field];

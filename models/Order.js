@@ -75,11 +75,33 @@ const orderSchema = new mongoose.Schema({
     max: 100,
     default: 0
   },
-  dietaryRequirements: [{
-    type: String,
-    trim: true,
-    enum: ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'nut-free', 'halal', 'kosher', 'low-sodium', 'spicy-mild', 'spicy-hot']
-  }],
+  taxAmount: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  taxRate: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0
+  },
+  serviceChargeAmount: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  serviceChargeRate: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0
+  },
+  subtotal: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
   specialRequests: {
     type: String,
     trim: true,
@@ -89,6 +111,12 @@ const orderSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: 20
+  },
+  customerEmail: {
+    type: String,
+    trim: true,
+    maxlength: 100,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
   notes: {
     type: String,
@@ -124,19 +152,24 @@ orderSchema.index({ status: 1, createdAt: 1 });
 
 // Calculate total amount before saving
 orderSchema.pre('save', function(next) {
-  const subtotal = this.items.reduce((total, item) => {
+  const calculatedSubtotal = this.items.reduce((total, item) => {
     return total + (item.price * item.quantity);
   }, 0);
   
-  // Add tip to total amount
-  this.totalAmount = subtotal + (this.tipAmount || 0);
+  // Set subtotal if not already set
+  if (this.subtotal === undefined || this.subtotal === 0) {
+    this.subtotal = calculatedSubtotal;
+  }
+  
+  // Calculate total amount including tax, service charge, and tip
+  this.totalAmount = this.subtotal + (this.taxAmount || 0) + (this.serviceChargeAmount || 0) + (this.tipAmount || 0);
   
   this.updatedAt = Date.now();
   next();
 });
 
-// Virtual for subtotal (without tip)
-orderSchema.virtual('subtotal').get(function() {
+// Virtual for calculatedSubtotal (without tax, service charge, and tip)
+orderSchema.virtual('calculatedSubtotal').get(function() {
   return this.items.reduce((total, item) => total + (item.price * item.quantity), 0);
 });
 
