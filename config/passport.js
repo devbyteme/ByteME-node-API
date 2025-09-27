@@ -2,7 +2,8 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const Vendor = require('../models/Vendor');
 const User = require('../models/User');
-const Admin = require('../models/Admin');
+const GeneralAdmin = require('../models/GeneralAdmin');
+const MultiVendorAdmin = require('../models/MultiVendorAdmin');
 const jwt = require('jsonwebtoken');
 
 // Serialize user for the session
@@ -126,12 +127,18 @@ passport.use('google-admin', new GoogleStrategy({
     const email = profile.emails[0].value;
     const name = profile.displayName;
     
-    // Check if admin already exists
-    let admin = await Admin.findOne({ email });
+    // Check if admin already exists (check both collections)
+    let admin = await GeneralAdmin.findOne({ email });
+    let adminType = 'general_admin';
     
     if (!admin) {
-      // Create new admin
-      admin = new Admin({
+      admin = await MultiVendorAdmin.findOne({ email });
+      adminType = 'multi_vendor_admin';
+    }
+    
+    if (!admin) {
+      // Create new general admin by default
+      admin = new GeneralAdmin({
         name,
         email,
         googleId: profile.id,
@@ -139,14 +146,14 @@ passport.use('google-admin', new GoogleStrategy({
         password: Math.random().toString(36).slice(-16)
       });
       await admin.save();
-      console.log('🔐 Passport: New admin created:', admin.email);
+      console.log('🔐 Passport: New general admin created:', admin.email);
     } else if (!admin.googleId) {
       // Link existing admin account with Google
       admin.googleId = profile.id;
       await admin.save();
-      console.log('🔐 Passport: Existing admin linked with Google:', admin.email);
+      console.log(`🔐 Passport: Existing ${adminType} linked with Google:`, admin.email);
     } else {
-      console.log('🔐 Passport: Existing admin with Google found:', admin.email);
+      console.log(`🔐 Passport: Existing ${adminType} with Google found:`, admin.email);
     }
     
     // Set userType for admin

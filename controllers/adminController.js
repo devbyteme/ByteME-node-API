@@ -1,7 +1,9 @@
-const Admin = require('../models/Admin');
+const GeneralAdmin = require('../models/GeneralAdmin');
+const MultiVendorAdmin = require('../models/MultiVendorAdmin');
 const User = require('../models/User');
 const Vendor = require('../models/Vendor');
 const Order = require('../models/Order');
+const VendorAccess = require('../models/VendorAccess');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
@@ -21,17 +23,221 @@ const sendEmailAsync = async (emailFunction, ...args) => {
 };
 
 // Generate JWT token for admin
-const generateAdminToken = (admin) => {
+const generateAdminToken = (admin, roleOverride) => {
   return jwt.sign(
     { 
       id: admin._id, 
       email: admin.email, 
-      role: admin.role,
+      role: roleOverride || admin.role || 'general_admin',
       userType: 'admin'
     },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
+};
+
+// Helper function to get vendor IDs for multi-vendor admin
+const getVendorIdsForAdmin = async (adminEmail) => {
+  const vendorAccess = await VendorAccess.find({
+    userEmail: String(adminEmail).toLowerCase(),
+    status: 'active'
+  }).select('vendorId');
+  // Ensure we always return ObjectId instances
+  return vendorAccess
+    .map(a => a.vendorId)
+    .filter(Boolean)
+    .map(id => (id instanceof mongoose.Types.ObjectId ? id : new mongoose.Types.ObjectId(String(id))));
+};
+
+// @desc    Login multi-vendor admin
+// @route   POST /api/auth/admin/multi-vendor-login
+// @access  Public
+const loginMultiVendorAdmin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find admin by email
+    const admin = await MultiVendorAdmin.findOne({ email });
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if account is locked
+    if (admin.isLocked) {
+      return res.status(423).json({
+        success: false,
+        message: 'Account is temporarily locked due to too many failed login attempts'
+      });
+    }
+
+    // Check if admin is active
+    if (!admin.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated'
+      });
+    }
+
+    // Check if admin is multi-vendor admin
+    // role implied by collection
+
+    // Check password
+    const isPasswordValid = await admin.comparePassword(password);
+    if (!isPasswordValid) {
+      await admin.incLoginAttempts();
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Ensure any pending invites for this admin are activated on first login
+    await VendorAccess.updateMany(
+      { userEmail: admin.email.toLowerCase(), status: 'pending' },
+      { $set: { status: 'active', acceptedAt: new Date() } }
+    );
+
+    // Check if user has any vendor access (active)
+    const vendorAccess = await VendorAccess.find({ 
+      userEmail: admin.email.toLowerCase(), 
+      status: { $in: ['active'] }
+    }).populate('vendorId');
+    
+    if (vendorAccess.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'No vendor access granted. Please contact a vendor to grant you access.'
+      });
+    }
+
+    // Reset login attempts on successful login
+    if (admin.loginAttempts > 0) {
+      await admin.resetLoginAttempts();
+    }
+
+    // Update last login
+    admin.lastLogin = new Date();
+    await admin.save();
+
+    // Generate JWT token
+    const token = generateAdminToken(admin, 'multi_vendor_admin');
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: admin.getPublicProfile()
+    });
+
+  } catch (error) {
+    console.error('Error logging in multi-vendor admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
+// @desc    Register multi-vendor admin
+// @route   POST /api/auth/admin/multi-vendor-register
+// @access  Public (with access token)
+const registerMultiVendorAdmin = async (req, res) => {
+  try {
+    const { name, email, password, accessToken } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password || !accessToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required'
+      });
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Normalize email for matching
+    const normalizedEmail = String(email).toLowerCase();
+
+    // Find and verify the vendor access (by token primarily)
+    const vendorAccess = await VendorAccess.findOne({ 
+      accessToken
+    }).populate('vendorId');
+
+    if (!vendorAccess) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired access token'
+      });
+    }
+
+    // Check email and state
+    if (vendorAccess.userEmail.toLowerCase() !== normalizedEmail) {
+      return res.status(400).json({ success: false, message: 'This invite was sent to a different email.' });
+    }
+
+    // Check if access token has expired
+    if (vendorAccess.expiresAt && vendorAccess.expiresAt < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Access token has expired'
+      });
+    }
+    if (vendorAccess.status === 'revoked') {
+      return res.status(400).json({ success: false, message: 'Access was revoked by the vendor.' });
+    }
+
+    // Check if admin already exists
+    const existingAdmin = await MultiVendorAdmin.findOne({ email: normalizedEmail });
+    if (existingAdmin) {
+      return res.status(400).json({
+        success: false,
+        message: 'Admin with this email already exists'
+      });
+    }
+
+    // Create new multi-vendor admin
+    const admin = new MultiVendorAdmin({
+      name,
+      email: normalizedEmail,
+      password,
+    });
+
+    await admin.save();
+
+    // Update vendor access status to active and consume token
+    vendorAccess.status = 'active';
+    vendorAccess.acceptedAt = new Date();
+    vendorAccess.userName = name;
+    vendorAccess.accessToken = undefined;
+    await vendorAccess.save();
+
+    // Send welcome email (non-blocking)
+    sendEmailAsync(sendAdminWelcomeEmail, admin.email, admin.name);
+
+    res.status(201).json({
+      success: true,
+      message: 'Multi-vendor admin account created successfully',
+      user: admin.getPublicProfile()
+    });
+
+  } catch (error) {
+    console.error('Error registering multi-vendor admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
 };
 
 // @desc    Register admin
@@ -51,7 +257,7 @@ const registerAdmin = async (req, res) => {
     }
 
     // Check if admin already exists
-    const existingAdmin = await Admin.findOne({ email });
+    const existingAdmin = await GeneralAdmin.findOne({ email });
     if (existingAdmin) {
       return res.status(400).json({
         success: false,
@@ -59,12 +265,11 @@ const registerAdmin = async (req, res) => {
       });
     }
 
-    // Create new admin
-    const admin = new Admin({
+    // Create new general admin
+    const admin = new GeneralAdmin({
       name,
       email,
       password,
-      role: 'admin'
     });
 
     await admin.save();
@@ -106,7 +311,7 @@ const loginAdmin = async (req, res) => {
     const { email, password } = req.body;
 
     // Find admin by email
-    const admin = await Admin.findOne({ email });
+    const admin = await GeneralAdmin.findOne({ email });
     if (!admin) {
       return res.status(401).json({
         success: false,
@@ -130,6 +335,8 @@ const loginAdmin = async (req, res) => {
       });
     }
 
+    // explicit role for token
+
     // Check password
     const isPasswordValid = await admin.comparePassword(password);
     if (!isPasswordValid) {
@@ -150,7 +357,7 @@ const loginAdmin = async (req, res) => {
     await admin.save();
 
     // Generate JWT token
-    const token = generateAdminToken(admin);
+    const token = generateAdminToken(admin, 'general_admin');
 
     res.json({
       success: true,
@@ -174,41 +381,70 @@ const loginAdmin = async (req, res) => {
 // @access  Private (Admin)
 const getDashboardStats = async (req, res) => {
   try {
+    const adminEmail = req.user.email;
+    const adminRole = req.user.role;
+    
+    // For multi-vendor admins, only show data for vendors they have access to
+    let vendorFilter = {};
+    let orderFilter = {};
+    
+    if (adminRole === 'multi_vendor_admin') {
+      const vendorIds = await getVendorIdsForAdmin(adminEmail);
+      vendorFilter = { _id: { $in: vendorIds }, isActive: true };
+      orderFilter = { vendorId: { $in: vendorIds } };
+    } else {
+      // General admins see all data
+      vendorFilter = { isActive: true };
+    }
+
     // Get counts
     const [totalVendors, totalCustomers, totalOrders] = await Promise.all([
-      Vendor.countDocuments({ isActive: true }),
-      User.countDocuments({ isActive: true }),
-      Order.countDocuments()
+      Vendor.countDocuments(vendorFilter),
+      User.countDocuments({ isActive: true }), // Customers are global
+      Order.countDocuments(orderFilter)
     ]);
 
     console.log('Basic counts:', { totalVendors, totalCustomers, totalOrders });
 
     // Check order payment statuses
-    const orderStatusCounts = await Order.aggregate([
-      {
-        $group: {
-          _id: '$paymentStatus',
-          count: { $sum: 1 },
-          totalAmount: { $sum: '$totalAmount' }
-        }
+    const orderStatusPipeline = [];
+    if (Object.keys(orderFilter).length > 0) {
+      orderStatusPipeline.push({ $match: orderFilter });
+    }
+    orderStatusPipeline.push({
+      $group: {
+        _id: '$paymentStatus',
+        count: { $sum: 1 },
+        totalAmount: { $sum: '$totalAmount' }
       }
-    ]);
+    });
+    
+    const orderStatusCounts = await Order.aggregate(orderStatusPipeline);
     console.log('Order payment status counts:', orderStatusCounts);
 
-    // Calculate total revenue (include all orders for demo purposes)
-    console.log('Calculating total revenue for all vendors...');
-    const revenueResult = await Order.aggregate([
-      { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
-    ]);
+    // Calculate total revenue
+    console.log('Calculating total revenue...');
+    const revenuePipeline = [];
+    if (Object.keys(orderFilter).length > 0) {
+      revenuePipeline.push({ $match: orderFilter });
+    }
+    revenuePipeline.push({ $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } });
+    
+    const revenueResult = await Order.aggregate(revenuePipeline);
     const totalRevenue = revenueResult.length > 0 ? revenueResult[0].totalRevenue : 0;
     console.log('Revenue aggregation result:', revenueResult);
     console.log('Total revenue calculated:', totalRevenue);
 
     // Also calculate paid revenue for comparison
-    const paidRevenueResult = await Order.aggregate([
-      { $match: { paymentStatus: 'paid' } },
-      { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
-    ]);
+    const paidRevenuePipeline = [];
+    if (Object.keys(orderFilter).length > 0) {
+      paidRevenuePipeline.push({ $match: { ...orderFilter, paymentStatus: 'paid' } });
+    } else {
+      paidRevenuePipeline.push({ $match: { paymentStatus: 'paid' } });
+    }
+    paidRevenuePipeline.push({ $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } });
+    
+    const paidRevenueResult = await Order.aggregate(paidRevenuePipeline);
     const paidRevenue = paidRevenueResult.length > 0 ? paidRevenueResult[0].totalRevenue : 0;
     console.log('Paid revenue calculated:', paidRevenue);
 
@@ -224,24 +460,32 @@ const getDashboardStats = async (req, res) => {
       recentOrders,
       previousOrders
     ] = await Promise.all([
-      Vendor.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
-      Vendor.countDocuments({ createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } }),
-      User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
-      User.countDocuments({ createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } }),
-      Order.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
-      Order.countDocuments({ createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } })
+      Vendor.countDocuments({ ...vendorFilter, createdAt: { $gte: thirtyDaysAgo } }),
+      Vendor.countDocuments({ ...vendorFilter, createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } }),
+      User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }), // Customers are global
+      User.countDocuments({ createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } }), // Customers are global
+      Order.countDocuments({ ...orderFilter, createdAt: { $gte: thirtyDaysAgo } }),
+      Order.countDocuments({ ...orderFilter, createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } })
     ]);
 
-    // Calculate revenue growth (last 30 days vs previous 30 days) - using all orders
+    // Calculate revenue growth (last 30 days vs previous 30 days)
+    const recentRevenuePipeline = [];
+    const previousRevenuePipeline = [];
+    
+    if (Object.keys(orderFilter).length > 0) {
+      recentRevenuePipeline.push({ $match: { ...orderFilter, createdAt: { $gte: thirtyDaysAgo } } });
+      previousRevenuePipeline.push({ $match: { ...orderFilter, createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } } });
+    } else {
+      recentRevenuePipeline.push({ $match: { createdAt: { $gte: thirtyDaysAgo } } });
+      previousRevenuePipeline.push({ $match: { createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } } });
+    }
+    
+    recentRevenuePipeline.push({ $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } });
+    previousRevenuePipeline.push({ $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } });
+    
     const [recentRevenue, previousRevenue] = await Promise.all([
-      Order.aggregate([
-        { $match: { createdAt: { $gte: thirtyDaysAgo } } },
-        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
-      ]),
-      Order.aggregate([
-        { $match: { createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo } } },
-        { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
-      ])
+      Order.aggregate(recentRevenuePipeline),
+      Order.aggregate(previousRevenuePipeline)
     ]);
 
     const recentRevenueAmount = recentRevenue.length > 0 ? recentRevenue[0].totalRevenue : 0;
@@ -289,6 +533,8 @@ const getDashboardStats = async (req, res) => {
 const getRevenueStats = async (req, res) => {
   try {
     const { period = '7d', vendorId } = req.query;
+    const adminEmail = req.user.email;
+    const adminRole = req.user.role;
     
     let days;
     switch (period) {
@@ -307,14 +553,14 @@ const getRevenueStats = async (req, res) => {
 
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    // Build match criteria (include all orders for demo purposes)
-    const matchCriteria = {
-      createdAt: { $gte: startDate }
-    };
+    // Build match criteria
+    const matchCriteria = { createdAt: { $gte: startDate } };
 
-    // Add vendor filter if specified
     if (vendorId && vendorId !== 'all') {
       matchCriteria.vendorId = new mongoose.Types.ObjectId(vendorId);
+    } else if (adminRole === 'multi_vendor_admin') {
+      const vendorIds = await getVendorIdsForAdmin(adminEmail);
+      matchCriteria.vendorId = { $in: vendorIds };
     }
 
     const revenueData = await Order.aggregate([
@@ -756,7 +1002,18 @@ const getVendorDashboardStats = async (req, res) => {
 // @access  Private (Admin)
 const getAllVendorsForAdmin = async (req, res) => {
   try {
-    const vendors = await Vendor.find({ isActive: true })
+    const adminEmail = req.user.email;
+    const adminRole = req.user.role;
+    
+    let vendorFilter = { isActive: true };
+    
+    // For multi-vendor admins, only show vendors they have access to
+    if (adminRole === 'multi_vendor_admin') {
+      const vendorIds = await getVendorIdsForAdmin(adminEmail);
+      vendorFilter = { _id: { $in: vendorIds }, isActive: true };
+    }
+    
+    const vendors = await Vendor.find(vendorFilter)
       .select('_id name email cuisine location')
       .sort({ name: 1 });
 
@@ -775,14 +1032,112 @@ const getAllVendorsForAdmin = async (req, res) => {
   }
 };
 
+// @desc    Get orders for admin (filtered by role/access)
+// @route   GET /api/admin/orders
+// @access  Private (Admin)
+const getAdminOrders = async (req, res) => {
+  try {
+    const adminEmail = req.user.email;
+    const adminRole = req.user.role;
+    const { vendorId, period = '30d' } = req.query;
+
+    // Resolve days
+    let days = 30;
+    if (period === '7d') days = 7; else if (period === '90d') days = 90;
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // Build filter
+    let match = { createdAt: { $gte: startDate } };
+    if (vendorId && vendorId !== 'all') {
+      match.vendorId = new mongoose.Types.ObjectId(vendorId);
+    } else if (adminRole === 'multi_vendor_admin') {
+      const vendorIds = await getVendorIdsForAdmin(adminEmail);
+      match.vendorId = { $in: vendorIds };
+    }
+
+    const orders = await Order.find(match)
+      .sort({ createdAt: -1 })
+      .limit(200);
+
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    console.error('Error getting admin orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
+// @desc    Get customers (derived from orders) filtered by access and date
+// @route   GET /api/admin/customers
+// @access  Private (Admin)
+const getAdminCustomers = async (req, res) => {
+  try {
+    const adminEmail = req.user.email;
+    const adminRole = req.user.role;
+    const { vendorId, period = '30d' } = req.query;
+
+    let days = 30;
+    if (period === '7d') days = 7; else if (period === '90d') days = 90;
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // Build match criteria from access
+    const match = { createdAt: { $gte: startDate } };
+    if (vendorId && vendorId !== 'all') {
+      match.vendorId = new mongoose.Types.ObjectId(vendorId);
+    } else if (adminRole === 'multi_vendor_admin') {
+      const vendorIds = await getVendorIdsForAdmin(adminEmail);
+      match.vendorId = { $in: vendorIds };
+    }
+
+    // Aggregate customers from orders
+    const results = await Order.aggregate([
+      { $match: match },
+      { $group: {
+          _id: { email: '$customerEmail' },
+          ordersCount: { $sum: 1 },
+          totalSpent: { $sum: '$totalAmount' },
+          lastOrderAt: { $max: '$createdAt' }
+        }
+      },
+      { $sort: { lastOrderAt: -1 } },
+      { $limit: 200 }
+    ]);
+
+    const customers = results
+      .filter(r => r._id && r._id.email)
+      .map(r => ({
+        email: r._id.email,
+        ordersCount: r.ordersCount,
+        totalSpent: r.totalSpent,
+        lastOrderAt: r.lastOrderAt
+      }));
+
+    res.json({ success: true, data: customers });
+  } catch (error) {
+    console.error('Error getting admin customers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+};
+
 module.exports = {
   registerAdmin,
   loginAdmin,
+  loginMultiVendorAdmin,
+  registerMultiVendorAdmin,
   getDashboardStats,
   getVendorDashboardStats,
   getRevenueStats,
   getVendorStats,
   getCustomerStats,
   getOrderStats,
-  getAllVendorsForAdmin
+  getAllVendorsForAdmin,
+  getAdminOrders,
+  getAdminCustomers
 };

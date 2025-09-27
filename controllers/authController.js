@@ -686,9 +686,13 @@ const adminForgotPassword = async (req, res) => {
       });
     }
 
-    // Find admin by email
-    const Admin = require('../models/Admin');
-    const admin = await Admin.findOne({ email });
+    // Find admin by email (check both admin collections)
+    const GeneralAdmin = require('../models/GeneralAdmin');
+    const MultiVendorAdmin = require('../models/MultiVendorAdmin');
+    let admin = await GeneralAdmin.findOne({ email });
+    if (!admin) {
+      admin = await MultiVendorAdmin.findOne({ email });
+    }
     if (!admin) {
       // Don't reveal if email exists or not for security
       return res.json({
@@ -898,12 +902,19 @@ const adminResetPassword = async (req, res) => {
       .update(token)
       .digest('hex');
 
-    // Find admin with valid reset token
-    const Admin = require('../models/Admin');
-    const admin = await Admin.findOne({
+    // Find admin with valid reset token (check both admin collections)
+    const GeneralAdmin = require('../models/GeneralAdmin');
+    const MultiVendorAdmin = require('../models/MultiVendorAdmin');
+    let admin = await GeneralAdmin.findOne({
       resetPasswordToken: hashedToken,
       resetPasswordExpires: { $gt: Date.now() }
     });
+    if (!admin) {
+      admin = await MultiVendorAdmin.findOne({
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { $gt: Date.now() }
+      });
+    }
 
     if (!admin) {
       return res.status(400).json({

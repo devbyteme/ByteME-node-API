@@ -48,6 +48,7 @@ app.use('/api/menu', require('./routes/menuRoutes'));
 app.use('/api', require('./routes/orderRoutes')); // Orders are at root level
 app.use('/api', require('./routes/tableRoutes')); // Tables are at root level
 app.use('/api', require('./routes/adminRoutes')); // Admin routes
+app.use('/api/vendor-access', require('./routes/vendorAccessRoutes')); // Vendor access management
 
 // Basic route
 app.get('/', (req, res) => {

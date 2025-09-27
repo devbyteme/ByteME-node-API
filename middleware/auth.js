@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Vendor = require('../models/Vendor');
-const Admin = require('../models/Admin');
+const GeneralAdmin = require('../models/GeneralAdmin');
+const MultiVendorAdmin = require('../models/MultiVendorAdmin');
 const { isBlacklisted } = require('./tokenBlacklist');
 
 // Middleware to authenticate JWT token
@@ -53,12 +54,20 @@ const authenticateToken = async (req, res, next) => {
         });
       }
     } else if (decoded.userType === 'admin') {
-      user = await Admin.findById(userId);
+      // Try both admin collections
+      user = await GeneralAdmin.findById(userId);
+      if (!user) {
+        user = await MultiVendorAdmin.findById(userId);
+      }
       if (!user) {
         return res.status(403).json({
           success: false,
           message: 'Invalid token - admin not found'
         });
+      }
+      // Ensure role is present (fallback to token role)
+      if (!user.role && decoded.role) {
+        user.role = decoded.role;
       }
       if (!user.isActive) {
         return res.status(403).json({
@@ -171,7 +180,13 @@ const optionalAuth = async (req, res, next) => {
       } else if (decoded.userType === 'customer' || decoded.userType === 'user') {
         user = await User.findById(userId);
       } else if (decoded.userType === 'admin') {
-        user = await Admin.findById(userId);
+        user = await GeneralAdmin.findById(userId);
+        if (!user) {
+          user = await MultiVendorAdmin.findById(userId);
+        }
+        if (user && !user.role && decoded.role) {
+          user.role = decoded.role;
+        }
       }
       
       if (user) {
