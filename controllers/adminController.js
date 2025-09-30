@@ -1070,7 +1070,7 @@ const getAdminOrders = async (req, res) => {
   }
 };
 
-// @desc    Get customers (derived from orders) filtered by access and date
+// @desc    Get customers for admin (join orders -> users by customerId)
 // @route   GET /api/admin/customers
 // @access  Private (Admin)
 const getAdminCustomers = async (req, res) => {
@@ -1092,11 +1092,12 @@ const getAdminCustomers = async (req, res) => {
       match.vendorId = { $in: vendorIds };
     }
 
-    // Aggregate customers from orders
-    const results = await Order.aggregate([
-      { $match: match },
-      { $group: {
-          _id: { email: '$customerEmail' },
+    // 1) Aggregate orders by customerId to compute stats
+    const orderAgg = await Order.aggregate([
+      { $match: { ...match, customerId: { $ne: null } } },
+      {
+        $group: {
+          _id: '$customerId',
           ordersCount: { $sum: 1 },
           totalSpent: { $sum: '$totalAmount' },
           lastOrderAt: { $max: '$createdAt' }
@@ -1106,14 +1107,26 @@ const getAdminCustomers = async (req, res) => {
       { $limit: 200 }
     ]);
 
-    const customers = results
-      .filter(r => r._id && r._id.email)
-      .map(r => ({
-        email: r._id.email,
+    const customerIds = orderAgg.map(r => r._id).filter(Boolean);
+
+    // 2) Fetch user records for these customerIds
+    const users = await User.find({ _id: { $in: customerIds } })
+      .select('_id email firstName lastName')
+      .lean();
+    const userById = new Map(users.map(u => [String(u._id), u]));
+
+    // 3) Join aggregated stats with user data
+    const customers = orderAgg.map(r => {
+      const user = userById.get(String(r._id));
+      return {
+        email: user?.email || 'unknown',
         ordersCount: r.ordersCount,
         totalSpent: r.totalSpent,
-        lastOrderAt: r.lastOrderAt
-      }));
+        lastOrderAt: r.lastOrderAt,
+        customerId: r._id,
+        name: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined
+      };
+    });
 
     res.json({ success: true, data: customers });
   } catch (error) {
