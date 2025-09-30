@@ -55,3 +55,14 @@ jobs:
         - name: Run deployment script on EC2
           run: |
             ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS }} "cd /var/www/byteme/api && ./deploy.sh"
+
+        - name: Setup SSH for Server 2
+          run: |
+            mkdir -p ~/.ssh
+            echo "${{ secrets.EC2_SSH_KEY_SERVER2 }}" > ~/.ssh/ec2-key-server2.pem
+            chmod 600 ~/.ssh/ec2-key-server2.pem
+            ssh-keyscan -H ${{ secrets.PUBLIC_DNS_aws }} >> ~/.ssh/known_hosts
+
+        - name: Deploy to Server 2
+          run: |
+            ssh -i ~/.ssh/ec2-key-server2.pem ${{ secrets.SERVER_USER_aws }}@${{ secrets.PUBLIC_DNS_aws }} "cd /var/www/byteme/api && ./deploy.sh"
