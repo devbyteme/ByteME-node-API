@@ -66,7 +66,7 @@ const grantAccess = async (req, res) => {
 
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>You've been granted admin access</h2>
+          <h2>You've been granted Multi vendor admin access</h2>
           <p>Hello${userName ? ` ${userName}` : ''},</p>
           <p>${vendor.name} has granted you admin access to their restaurant on ByteMe.</p>
           <p>Please click the button below to set up your Multi‑Vendor Admin account:</p>
