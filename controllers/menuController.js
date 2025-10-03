@@ -143,14 +143,22 @@ const createMenuItem = async (req, res) => {
       price,
       category,
       available,
-      image,
       ingredients,
       allergens,
       nutritionalInfo,
-      preparationTime
+      preparationTime,
+      dietary_info
     } = req.body;
 
-    // Add vendor ID from authenticated user
+     // Get image URL from uploaded file
+    const image = req.file ? req.file.location : null;
+
+    // Parse JSON fields if they come as strings
+    const parsedIngredients = ingredients ? JSON.parse(ingredients) : [];
+    const parsedAllergens = allergens ? JSON.parse(allergens) : [];
+    const parsedNutritionalInfo = nutritionalInfo ? JSON.parse(nutritionalInfo) : {};
+    const parsedDietaryInfo = dietary_info ? JSON.parse(dietary_info) : [];
+    
     const menuItem = new MenuItem({
       name,
       description,
@@ -158,10 +166,11 @@ const createMenuItem = async (req, res) => {
       category,
       available,
       image,
-      ingredients,
-      allergens,
-      nutritionalInfo,
+      ingredients: parsedIngredients,
+      allergens: parsedAllergens,
+      nutritionalInfo: parsedNutritionalInfo,
       preparationTime,
+      dietary_info: parsedDietaryInfo,
       vendorId: req.user._id
     });
 
@@ -176,6 +185,19 @@ const createMenuItem = async (req, res) => {
   } catch (error) {
     console.error('Error creating menu item:', error);
     
+    // If there was a file uploaded but validation failed, delete it from S3
+    if (req.file) {
+      try {
+        const deleteParams = {
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: req.file.key
+        };
+        await s3Client.send(new DeleteObjectCommand(deleteParams));
+      } catch (s3Error) {
+        console.error('Error deleting uploaded file from S3:', s3Error);
+      }
+    }
+
     // Handle validation errors
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
@@ -205,11 +227,11 @@ const updateMenuItem = async (req, res) => {
       price,
       category,
       available,
-      image,
       ingredients,
       allergens,
       nutritionalInfo,
-      preparationTime
+      preparationTime,
+      dietary_info
     } = req.body;
 
     // Find menu item and ensure it belongs to the authenticated vendor
@@ -219,10 +241,37 @@ const updateMenuItem = async (req, res) => {
     });
 
     if (!menuItem) {
+      // If there was a file uploaded but menu item not found, delete it from S3
+      if (req.file) {
+        try {
+          const deleteParams = {
+            Bucket: process.env.AWS_S3_BUCKET_NAME,
+            Key: req.file.key
+          };
+          await s3Client.send(new DeleteObjectCommand(deleteParams));
+        } catch (s3Error) {
+          console.error('Error deleting uploaded file from S3:', s3Error);
+        }
+      }
+      
       return res.status(404).json({
         success: false,
         message: 'Menu item not found or access denied'
       });
+    }
+
+    // If a new image is uploaded, delete the old one from S3
+    if (req.file && menuItem.image) {
+      try {
+        const oldImageKey = menuItem.image.split('/').pop();
+        const deleteParams = {
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: `menu-items/${oldImageKey}`
+        };
+        await s3Client.send(new DeleteObjectCommand(deleteParams));
+      } catch (s3Error) {
+        console.error('Error deleting old image from S3:', s3Error);
+      }
     }
 
     // Update fields
@@ -231,11 +280,14 @@ const updateMenuItem = async (req, res) => {
     if (price !== undefined) menuItem.price = price;
     if (category !== undefined) menuItem.category = category;
     if (available !== undefined) menuItem.available = available;
-    if (image !== undefined) menuItem.image = image;
-    if (ingredients !== undefined) menuItem.ingredients = ingredients;
-    if (allergens !== undefined) menuItem.allergens = allergens;
-    if (nutritionalInfo !== undefined) menuItem.nutritionalInfo = nutritionalInfo;
+    if (req.file) menuItem.image = req.file.location; // Update image if new file uploaded
+    
+    // Parse and update other fields
+    if (ingredients !== undefined) menuItem.ingredients = JSON.parse(ingredients);
+    if (allergens !== undefined) menuItem.allergens = JSON.parse(allergens);
+    if (nutritionalInfo !== undefined) menuItem.nutritionalInfo = JSON.parse(nutritionalInfo);
     if (preparationTime !== undefined) menuItem.preparationTime = preparationTime;
+    if (dietary_info !== undefined) menuItem.dietary_info = JSON.parse(dietary_info);
 
     await menuItem.save();
 
@@ -248,7 +300,19 @@ const updateMenuItem = async (req, res) => {
   } catch (error) {
     console.error('Error updating menu item:', error);
     
-    // Handle validation errors
+    // If there was a file uploaded but update failed, delete it from S3
+    if (req.file) {
+      try {
+        const deleteParams = {
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: req.file.key
+        };
+        await s3Client.send(new DeleteObjectCommand(deleteParams));
+      } catch (s3Error) {
+        console.error('Error deleting uploaded file from S3:', s3Error);
+      }
+    }
+
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -289,6 +353,21 @@ const deleteMenuItem = async (req, res) => {
         success: false,
         message: 'Menu item not found or access denied'
       });
+    }
+
+    // Delete image from S3 if it exists
+    if (menuItem.image) {
+      try {
+        const imageKey = menuItem.image.split('/').pop();
+        const deleteParams = {
+          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Key: `menu-items/${imageKey}`
+        };
+        await s3Client.send(new DeleteObjectCommand(deleteParams));
+      } catch (s3Error) {
+        console.error('Error deleting image from S3:', s3Error);
+        // Continue with menu item deletion even if image deletion fails
+      }
     }
 
     await menuItem.deleteOne();

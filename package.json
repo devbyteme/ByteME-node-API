@@ -19,6 +19,8 @@
   },
   "homepage": "https://github.com/theDocklar/ByteME-node-API#readme",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.901.0",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.11.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
@@ -28,6 +30,8 @@
     "express-session": "^1.18.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.17.1",
+    "multer": "^2.0.2",
+    "multer-s3": "^3.0.1",
     "nodemailer": "^7.0.5",
     "nodemon": "^3.1.10",
     "passport": "^0.7.0",
