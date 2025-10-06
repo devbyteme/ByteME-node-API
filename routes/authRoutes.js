@@ -51,12 +51,33 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 router.get('/google/callback', passport.authenticate('google', { session: false }), googleCallback);
 
 // Customer Google OAuth (Completely separate implementation)
-router.get('/google/customer', passport.authenticate('google-customer', { 
-  scope: ['profile', 'email'],
-  state: true,
-  passReqToCallback: true
-}));
-router.get('/google/customer/callback', passport.authenticate('google-customer', { session: false }), customerGoogleCallback);
+router.get('/google/customer', (req, res, next) => {
+  // Pass the state parameter through the session so it survives the OAuth flow
+  if (req.query.state) {
+    req.session.oauth_redirect_url = decodeURIComponent(req.query.state);
+    console.log('🔐 OAuth Init: Storing redirect URL in session:', req.session.oauth_redirect_url);
+  }
+  passport.authenticate('google-customer', { 
+    scope: ['profile', 'email'],
+    passReqToCallback: true
+  })(req, res, next);
+});
+router.get('/google/customer/callback', (req, res, next) => {
+  passport.authenticate('google-customer', { session: false }, (err, user, info) => {
+    if (err) {
+      console.error('🔐 Customer Google OAuth error:', err);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      return res.redirect(`${frontendUrl}/customer-auth?error=Google authentication failed: ${encodeURIComponent(err.message)}`);
+    }
+    if (!user) {
+      console.error('🔐 Customer Google OAuth: No user returned', info);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      return res.redirect(`${frontendUrl}/customer-auth?error=Authentication failed - no user`);
+    }
+    req.user = user;
+    next();
+  })(req, res, next);
+}, customerGoogleCallback);
 
 // Admin Google OAuth
 router.get('/google/admin', passport.authenticate('google-admin', { scope: ['profile', 'email'] }));

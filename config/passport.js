@@ -71,9 +71,8 @@ passport.use('google', new GoogleStrategy({
 passport.use('google-customer', new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "/api/auth/google/customer/callback",
+  callbackURL: process.env.GOOGLE_CUSTOMER_CALLBACK_URL || "http://localhost:3000/api/auth/google/customer/callback",
   scope: ['profile', 'email'],
-  state: true,
   passReqToCallback: true
 }, async (req, accessToken, refreshToken, profile, done) => {
   try {
