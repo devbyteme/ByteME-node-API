@@ -68,7 +68,7 @@ jobs:
             ssh -i ~/.ssh/ec2-key-server2.pem ${{ secrets.SERVER_USER_aws }}@${{ secrets.PUBLIC_DNS_aws }} "cd /var/www/byteme/api && ./deploy.sh"
   cleanup-latest:
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: deploy
     permissions:
       packages: write
     steps:
