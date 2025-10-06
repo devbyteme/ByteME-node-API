@@ -66,3 +66,29 @@ jobs:
         - name: Deploy to Server 2
           run: |
             ssh -i ~/.ssh/ec2-key-server2.pem ${{ secrets.SERVER_USER_aws }}@${{ secrets.PUBLIC_DNS_aws }} "cd /var/www/byteme/api && ./deploy.sh"
+  cleanup-latest:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      packages: write
+    steps:
+      - name: Wait 5 minutes before deleting 'latest'
+        run: sleep 60
+      - name: Install GitHub CLI
+        run: sudo apt-get install -y gh
+
+      - name: Delete 'latest' image tag from GHCR
+        run: |
+          
+          gh api /users/devbyteme/packages/container/byteme-dashboard/versions \
+            --jq '.[] | select(.metadata.container.tags | index("latest")) | .id' > version_id.txt
+
+          if [ -s version_id.txt ]; then
+            version_id=$(cat version_id.txt)
+            echo " Deleting version ID: $version_id"
+            gh api -X DELETE /users/devbyteme/packages/container/byteme-dashboard/versions/$version_id
+          else
+            echo "No 'latest' tag found to delete."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_PAT }}
