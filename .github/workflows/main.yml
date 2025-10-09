@@ -83,9 +83,9 @@ jobs:
           if [ "${{ github.ref_name }}" = "production" ]; then
             echo "🔧 Deploying production image: ${{ env.IMAGE }}"
             ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS_PROD }} \
-              "cd /var/www/byteme/dashboard && ./deploy.sh"
+              "cd /var/www/byteme/api && ./deploy.sh"
           else
             echo "🔧 Deploying development image: ${{ env.IMAGE }}"
             ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS }} \
-              "cd /var/www/byteme/dashboard && ./deploy.sh"
+              "cd /var/www/byteme/api && ./deploy.sh"
           fi
