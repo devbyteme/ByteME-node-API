@@ -1,9 +1,10 @@
-name: build and push
+name: Build, Push & Deploy (Node API)
 
 on:
   push:
     branches:
       - main
+      - production
 
 jobs:
   build-and-push:
@@ -11,7 +12,6 @@ jobs:
 
     env:
       REGISTRY: ghcr.io
-      IMAGE: ghcr.io/devbyteme/byteme-nodeapi
       TIMESTAMP: ${{ github.run_number }}-${{ github.sha }}
 
     permissions:
@@ -19,11 +19,17 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      # - name: Write Secret to File
-      #   run: echo "${{ secrets.ENVSECRET }}" > .env
+      - name: Set image name based on branch
+        id: set-image
+        run: |
+          if [[ "${GITHUB_REF##*/}" == "production" ]]; then
+            echo "IMAGE=ghcr.io/devbyteme/byteme-dashboard-prod" >> $GITHUB_ENV
+          else
+            echo "IMAGE=ghcr.io/devbyteme/byteme-dashboard" >> $GITHUB_ENV
+          fi
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
@@ -34,61 +40,60 @@ jobs:
 
       - name: Build and push image
         run: |
-          docker build -t ${{ env.IMAGE }}:${{ env.TIMESTAMP }} -t ${{ env.IMAGE }}:latest .
+          docker build \
+            --build-arg VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }} \
+            -t ${{ env.IMAGE }}:${{ env.TIMESTAMP }} \
+            -t ${{ env.IMAGE }}:latest .
+
           docker push ${{ env.IMAGE }}:${{ env.TIMESTAMP }}
           docker push ${{ env.IMAGE }}:latest
-  deploy:
-      runs-on: ubuntu-latest
-      needs: build-and-push
-      
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v3
-  
-        - name: Setup SSH
-          run: |
-            mkdir -p ~/.ssh
-            echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2-key.pem
-            chmod 600 ~/.ssh/ec2-key.pem
-            ssh-keyscan -H ${{ secrets.PUBLIC_DNS }} >> ~/.ssh/known_hosts
-  
-        - name: Run deployment script on EC2
-          run: |
-            ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS }} "cd /var/www/byteme/api && ./deploy.sh"
 
-        - name: Setup SSH for Server 2
-          run: |
-            mkdir -p ~/.ssh
-            echo "${{ secrets.EC2_SSH_KEY_SERVER2 }}" > ~/.ssh/ec2-key-server2.pem
-            chmod 600 ~/.ssh/ec2-key-server2.pem
-            ssh-keyscan -H ${{ secrets.PUBLIC_DNS_aws }} >> ~/.ssh/known_hosts
+      - name: Set image tag output for deploy
+        id: image
+        run: echo "image_tag=${{ env.TIMESTAMP }}" >> $GITHUB_OUTPUT
 
-        - name: Deploy to Server 2
-          run: |
-            ssh -i ~/.ssh/ec2-key-server2.pem ${{ secrets.SERVER_USER_aws }}@${{ secrets.PUBLIC_DNS_aws }} "cd /var/www/byteme/api && ./deploy.sh"
-  cleanup-latest:
+
+  deploy-development:
     runs-on: ubuntu-latest
-    needs: deploy
-    permissions:
-      packages: write
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment: development
+
     steps:
-      - name: Wait a minutes before deleting 'latest'
-        run: sleep 60
-      - name: Install GitHub CLI
-        run: sudo apt-get install -y gh
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Delete 'latest' image tag from GHCR
+      - name: Setup SSH
         run: |
-          
-          gh api /users/devbyteme/packages/container/byteme-nodeapi/versions \
-            --jq '.[] | select(.metadata.container.tags | index("latest")) | .id' > version_id.txt
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
+          chmod 600 ~/.ssh/ec2-key.pem
+          ssh-keyscan -H ${{ secrets.PUBLIC_DNS }} >> ~/.ssh/known_hosts
 
-          if [ -s version_id.txt ]; then
-            version_id=$(cat version_id.txt)
-            echo " Deleting version ID: $version_id"
-            gh api -X DELETE /users/devbyteme/packages/container/byteme-nodeapi/versions/$version_id
-          else
-            echo "No 'latest' tag found to delete."
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GHCR_PAT }}
+      - name: Deploy to Development EC2
+        run: |
+          ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS }} \
+          "cd /var/www/byteme/dashboard && ./deploy.sh"
+
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/production'
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY_PROD }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
+          chmod 600 ~/.ssh/ec2-key.pem
+          ssh-keyscan -H ${{ secrets.PUBLIC_DNS_PROD }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Production EC2
+        run: |
+          ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS_PROD }} \
+          "cd /var/www/byteme/dashboard && ./deploy.sh"
