@@ -177,7 +177,7 @@ const customerGoogleCallback = async (req, res) => {
   try {
     console.log('🔐 Backend: Customer Google OAuth callback triggered');
     console.log('🔐 Backend: User data:', req.user?.email, 'userType:', req.user?.userType);
-    console.log('🔐 Backend: Query params:', req.query);
+    console.log('🔐 Backend: Session redirect URL:', req.session?.oauth_redirect_url);
     
     // Verify we have a valid customer user
     if (!req.user || req.user.userType !== 'customer') {
@@ -197,31 +197,24 @@ const customerGoogleCallback = async (req, res) => {
     // Encode user data to pass in URL
     const userData = encodeURIComponent(JSON.stringify(userProfile));
     
-    // Get the redirect URL from state parameter
-    const stateParam = req.query?.state;
-    console.log('🔐 Backend: State parameter received:', stateParam);
+    // Get the redirect URL from session (stored during OAuth initiation)
+    const redirectUrl = req.session?.oauth_redirect_url;
+    console.log('🔐 Backend: Redirect URL from session:', redirectUrl);
     
-    if (stateParam) {
-      try {
-        // Decode the state parameter to get the original redirect URL
-        const decodedState = decodeURIComponent(stateParam);
-        console.log('🔐 Backend: Decoded state parameter:', decodedState);
-        
-        // Build the final redirect URL with authentication data
-        const finalRedirectUrl = `${decodedState}&token=${token}&googleAuth=true&userData=${userData}`;
-        console.log('🔐 Backend: Final redirect URL:', finalRedirectUrl);
-        
-        // Redirect the customer to the menu page with auth data
-        res.redirect(finalRedirectUrl);
-        
-      } catch (decodeError) {
-        console.error('🔐 Backend: Error decoding state parameter:', decodeError);
-        // Fallback: redirect to customer auth page
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        res.redirect(`${frontendUrl}/customer-auth?token=${token}&googleAuth=true&userData=${userData}`);
-      }
+    // Clear the session redirect URL
+    if (req.session?.oauth_redirect_url) {
+      delete req.session.oauth_redirect_url;
+    }
+    
+    if (redirectUrl) {
+      // Build the final redirect URL with authentication data
+      const finalRedirectUrl = `${redirectUrl}&token=${token}&googleAuth=true&userData=${userData}`;
+      console.log('🔐 Backend: Final redirect URL:', finalRedirectUrl);
+      
+      // Redirect the customer to the menu page with auth data
+      res.redirect(finalRedirectUrl);
     } else {
-      console.log('🔐 Backend: No state parameter found, using fallback redirect');
+      console.log('🔐 Backend: No redirect URL found in session, using fallback');
       // Fallback: redirect to customer auth page
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       res.redirect(`${frontendUrl}/customer-auth?token=${token}&googleAuth=true&userData=${userData}`);
