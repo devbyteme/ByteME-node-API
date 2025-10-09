@@ -10,14 +10,14 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
-    # Dynamically set environment name (for GitHub UI environments)
-    environment: ${{ github.ref_name == 'main' && 'development' || 'production' }}
+    # 👇 Dynamically choose environment name for GitHub UI
+    environment: ${{ github.ref_name == 'main' && 'development' || github.ref_name == 'production' && 'production' }}
 
     env:
       REGISTRY: ghcr.io
       TIMESTAMP: ${{ github.run_number }}-${{ github.sha }}
-      # Dynamically set image name
-      IMAGE: ${{ github.ref_name == 'main' && 'ghcr.io/devbyteme/byteme-nodeapi' || 'ghcr.io/devbyteme/byteme-nodeapi-prod' }}
+      # 👇 Dynamically set image name based on branch
+      IMAGE: ${{ github.ref_name == 'main' && 'ghcr.io/devbyteme/byteme-nodeapi' || github.ref_name == 'production' && 'ghcr.io/devbyteme/byteme-nodeapi-prod' }}
 
     permissions:
       contents: read
@@ -34,7 +34,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
 
-      - name: 🏗️ Build and push Docker image
+      - name: 🏗️ Build and Push Docker Image
         run: |
           echo "🚀 Building for branch: ${{ github.ref_name }}"
           echo "🧩 Image name: ${{ env.IMAGE }}"
@@ -56,11 +56,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-push
 
-    # Match the same environment dynamically
-    environment: ${{ github.ref_name == 'main' && 'development' || 'production' }}
+    # 👇 Match same dynamic environment
+    environment: ${{ github.ref_name == 'main' && 'development' || github.ref_name == 'production' && 'production' }}
 
     env:
-      IMAGE: ${{ github.ref_name == 'main' && 'ghcr.io/devbyteme/byteme-nodeapi' || 'ghcr.io/devbyteme/byteme-nodeapi-prod' }}
+      IMAGE: ${{ github.ref_name == 'main' && 'ghcr.io/devbyteme/byteme-nodeapi' || github.ref_name == 'production' && 'ghcr.io/devbyteme/byteme-nodeapi-prod' }}
 
     steps:
       - name: 🧾 Checkout repository
