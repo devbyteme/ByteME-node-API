@@ -10,90 +10,82 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
+    # 👇 Dynamically choose environment name for GitHub UI
+    environment: ${{ github.ref_name == 'main' && 'development' || github.ref_name == 'production' && 'production' }}
+
     env:
       REGISTRY: ghcr.io
       TIMESTAMP: ${{ github.run_number }}-${{ github.sha }}
+      # 👇 Dynamically set image name based on branch
+      IMAGE: ${{ github.ref_name == 'main' && 'ghcr.io/devbyteme/byteme-nodeapi' || github.ref_name == 'production' && 'ghcr.io/devbyteme/byteme-nodeapi-prod' }}
 
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Checkout repository
+      - name: 🧾 Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set image name based on branch
-        id: set-image
-        run: |
-          if [[ "${GITHUB_REF##*/}" == "production" ]]; then
-            echo "IMAGE=ghcr.io/devbyteme/byteme-dashboard-prod" >> $GITHUB_ENV
-          else
-            echo "IMAGE=ghcr.io/devbyteme/byteme-dashboard" >> $GITHUB_ENV
-          fi
-
-      - name: Login to GitHub Container Registry
+      - name: 🔐 Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
 
-      - name: Build and push image
+      - name: 🏗️ Build and Push Docker Image
         run: |
+          echo "🚀 Building for branch: ${{ github.ref_name }}"
+          echo "🧩 Image name: ${{ env.IMAGE }}"
+
           docker build \
-            --build-arg VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }} \
+            --build-arg NODE_ENV=${{ github.ref_name }} \
             -t ${{ env.IMAGE }}:${{ env.TIMESTAMP }} \
             -t ${{ env.IMAGE }}:latest .
 
           docker push ${{ env.IMAGE }}:${{ env.TIMESTAMP }}
           docker push ${{ env.IMAGE }}:latest
 
-      - name: Set image tag output for deploy
+      - name: 📦 Set image tag output for deploy
         id: image
         run: echo "image_tag=${{ env.TIMESTAMP }}" >> $GITHUB_OUTPUT
 
 
-  deploy-development:
+  deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main'
-    environment: development
+
+    # 👇 Match same dynamic environment
+    environment: ${{ github.ref_name == 'main' && 'development' || github.ref_name == 'production' && 'production' }}
+
+    env:
+      IMAGE: ${{ github.ref_name == 'main' && 'ghcr.io/devbyteme/byteme-nodeapi' || github.ref_name == 'production' && 'ghcr.io/devbyteme/byteme-nodeapi-prod' }}
 
     steps:
-      - name: Checkout repository
+      - name: 🧾 Checkout repository
         uses: actions/checkout@v3
 
-      - name: Setup SSH
+      - name: 🔑 Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
+          if [ "${{ github.ref_name }}" = "production" ]; then
+            echo "${{ secrets.EC2_SSH_KEY_PROD }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
+            ssh-keyscan -H ${{ secrets.PUBLIC_DNS_PROD }} >> ~/.ssh/known_hosts
+          else
+            echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
+            ssh-keyscan -H ${{ secrets.PUBLIC_DNS }} >> ~/.ssh/known_hosts
+          fi
           chmod 600 ~/.ssh/ec2-key.pem
-          ssh-keyscan -H ${{ secrets.PUBLIC_DNS }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to Development EC2
+      - name: 🚀 Deploy to EC2
         run: |
-          ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS }} \
-          "cd /var/www/byteme/dashboard && ./deploy.sh"
-
-
-  deploy-production:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.ref == 'refs/heads/production'
-    environment: production
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY_PROD }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
-          chmod 600 ~/.ssh/ec2-key.pem
-          ssh-keyscan -H ${{ secrets.PUBLIC_DNS_PROD }} >> ~/.ssh/known_hosts
-
-      - name: Deploy to Production EC2
-        run: |
-          ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER_PROD }}@${{ secrets.PUBLIC_DNS_PROD }} \
-          "cd /var/www/byteme/dashboard && ./deploy.sh"
+          if [ "${{ github.ref_name }}" = "production" ]; then
+            echo "🔧 Deploying production image: ${{ env.IMAGE }}"
+            ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS_PROD }} \
+              "cd /var/www/byteme/api && ./deploy.sh"
+          else
+            echo "🔧 Deploying development image: ${{ env.IMAGE }}"
+            ssh -i ~/.ssh/ec2-key.pem ${{ secrets.SERVER_USER }}@${{ secrets.PUBLIC_DNS }} \
+              "cd /var/www/byteme/api && ./deploy.sh"
+          fi
