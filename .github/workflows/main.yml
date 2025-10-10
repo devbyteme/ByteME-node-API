@@ -16,7 +16,6 @@ jobs:
     env:
       REGISTRY: ghcr.io
       TIMESTAMP: ${{ github.run_number }}-${{ github.sha }}
-      # 👇 Dynamically set image name based on branch
       IMAGE: ${{ github.ref_name == 'main' && 'ghcr.io/devbyteme/byteme-nodeapi' || github.ref_name == 'production' && 'ghcr.io/devbyteme/byteme-nodeapi-prod' }}
 
     permissions:
