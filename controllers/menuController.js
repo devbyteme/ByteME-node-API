@@ -150,8 +150,11 @@ const createMenuItem = async (req, res) => {
       dietary_info
     } = req.body;
 
-     // Get image URL from uploaded file
-    const image = req.file ? req.file.location : null;
+     // Get image URL from uploaded file or direct URL
+    const image = req.file ? req.file.location : (req.body.image || null);
+    console.log('Image processing - req.file:', req.file ? 'file uploaded' : 'no file');
+    console.log('Image processing - req.body.image:', req.body.image);
+    console.log('Final image value:', image);
 
     // Parse JSON fields if they come as strings
     const parsedIngredients = ingredients ? JSON.parse(ingredients) : [];
@@ -280,7 +283,15 @@ const updateMenuItem = async (req, res) => {
     if (price !== undefined) menuItem.price = price;
     if (category !== undefined) menuItem.category = category;
     if (available !== undefined) menuItem.available = available;
-    if (req.file) menuItem.image = req.file.location; // Update image if new file uploaded
+    
+    // Update image if new file uploaded or new URL provided
+    if (req.file) {
+      menuItem.image = req.file.location;
+      console.log('Updated image from file:', req.file.location);
+    } else if (req.body.image !== undefined) {
+      menuItem.image = req.body.image;
+      console.log('Updated image from URL:', req.body.image);
+    }
     
     // Parse and update other fields
     if (ingredients !== undefined) menuItem.ingredients = JSON.parse(ingredients);
