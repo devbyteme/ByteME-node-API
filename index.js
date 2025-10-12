@@ -132,6 +132,33 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Public category endpoint for customers
+app.get('/api/public/categories/:vendorId', async (req, res) => {
+  try {
+    const Category = require('./models/Category');
+    const { vendorId } = req.params;
+    
+    const categories = await Category.find({ 
+      vendorId, 
+      isActive: true 
+    })
+    .sort({ sortOrder: 1, displayName: 1 })
+    .select('name displayName description color icon sortOrder');
+
+    res.json({
+      success: true,
+      count: categories.length,
+      data: categories
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error',
+      error: error.message
+    });
+  }
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({

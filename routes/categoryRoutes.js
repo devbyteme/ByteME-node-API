@@ -2,8 +2,47 @@ const express = require('express');
 const router = express.Router();
 const categoryController = require('../controllers/categoryController');
 const { authenticateToken, requireVendor } = require('../middleware/auth');
+const Category = require('../models/Category');
 
-// All routes require vendor authentication
+// Public route for getting categories by vendor ID (no authentication required)
+// This must be defined BEFORE the authentication middleware
+router.get('/public/:vendorId', async (req, res) => {
+  try {
+    console.log('Public category route hit with vendorId:', req.params.vendorId);
+    const { vendorId } = req.params;
+    
+    if (!vendorId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vendor ID is required'
+      });
+    }
+
+    const categories = await Category.find({ 
+      vendorId, 
+      isActive: true 
+    })
+    .sort({ sortOrder: 1, displayName: 1 })
+    .select('name displayName description color icon sortOrder');
+
+    console.log('Found categories:', categories.length);
+    res.json({
+      success: true,
+      count: categories.length,
+      data: categories
+    });
+
+  } catch (error) {
+    console.error('Error getting public categories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+});
+
+// All other routes require vendor authentication
 router.use(authenticateToken, requireVendor);
 
 // @desc    Get all categories for vendor
