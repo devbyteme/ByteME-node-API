@@ -1,4 +1,5 @@
 const Vendor = require('../models/Vendor');
+const { deleteUploadedFile } = require('../middleware/uploadVendorLogo');
 
 // @desc    Get all vendors
 // @route   GET /api/vendors
@@ -149,13 +150,40 @@ const updateVendorProfile = async (req, res) => {
     const vendor = await Vendor.findById(req.user._id);
     
     if (!vendor) {
+      // If there was a file uploaded but vendor not found, delete it from S3
+      if (req.file) {
+        await deleteUploadedFile(req.file.key);
+      }
+      
       return res.status(404).json({
         success: false,
         message: 'Vendor not found'
       });
     }
 
-    // Update fields
+    // Handle logo upload
+    if (req.file) {
+      console.log('Logo file uploaded:', req.file.location);
+      
+      // If there was an existing logo, delete it from S3
+      if (vendor.logo) {
+        try {
+          const oldLogoKey = vendor.logo.split('/').pop();
+          await deleteUploadedFile(`vendor-logos/${oldLogoKey}`);
+        } catch (s3Error) {
+          console.error('Error deleting old logo from S3:', s3Error);
+          // Continue with update even if old logo deletion fails
+        }
+      }
+      
+      vendor.logo = req.file.location;
+    } else if (req.body.logo !== undefined) {
+      // Handle direct logo URL or setting logo to null
+      vendor.logo = req.body.logo;
+      console.log('Logo updated via URL:', req.body.logo);
+    }
+
+    // Update other fields
     const updateFields = ['name', 'description', 'cuisine', 'phone', 'location', 'billingSettings'];
     updateFields.forEach(field => {
       if (req.body[field] !== undefined) {
@@ -174,6 +202,11 @@ const updateVendorProfile = async (req, res) => {
   } catch (error) {
     console.error('Error updating vendor profile:', error);
     
+    // If there was a file uploaded but update failed, delete it from S3
+    if (req.file) {
+      await deleteUploadedFile(req.file.key);
+    }
+
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -190,10 +223,60 @@ const updateVendorProfile = async (req, res) => {
   }
 };
 
+// @desc    Delete vendor logo
+// @route   DELETE /api/vendors/profile/logo
+// @access  Private (Vendor only)
+const deleteVendorLogo = async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.user._id);
+    
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vendor not found'
+      });
+    }
+
+    if (!vendor.logo) {
+      return res.status(400).json({
+        success: false,
+        message: 'No logo to delete'
+      });
+    }
+
+    // Delete logo from S3
+    try {
+      const logoKey = vendor.logo.split('/').pop();
+      await deleteUploadedFile(`vendor-logos/${logoKey}`);
+    } catch (s3Error) {
+      console.error('Error deleting logo from S3:', s3Error);
+      // Continue with logo deletion from database even if S3 deletion fails
+    }
+
+    // Remove logo from vendor document
+    vendor.logo = null;
+    await vendor.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Logo deleted successfully',
+      data: vendor.getPublicProfile()
+    });
+
+  } catch (error) {
+    console.error('Error deleting vendor logo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   getAllVendors,
   getVendorById,
   updateVendor,
   deleteVendor,
-  updateVendorProfile
-}; 
+  updateVendorProfile,
+  deleteVendorLogo
+};
