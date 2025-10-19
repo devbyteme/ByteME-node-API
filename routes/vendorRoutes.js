@@ -8,12 +8,13 @@ const {
   updateVendorProfile
 } = require('../controllers/vendorController');
 const { authenticateToken, requireVendor } = require('../middleware/auth');
+const { uploadVendorLogo } = require('../middleware/uploadVendorLogo');
 
 // Vendor management routes (authentication handled separately)
 router.get('/', getAllVendors);
 
 // Profile update route for authenticated vendors (must come before /:id routes)
-router.put('/profile', authenticateToken, requireVendor, updateVendorProfile);
+router.put('/profile', authenticateToken, requireVendor,uploadVendorLogo.single('logo'), updateVendorProfile);
 
 // Generic vendor routes (must come after specific routes)
 router.get('/:id', getVendorById);
