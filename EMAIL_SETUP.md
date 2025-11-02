@@ -1,5 +1,4 @@
 # Email Notifications Setup
-
 This document explains how to set up email notifications for ByteMe order management.
 
 ## Features
