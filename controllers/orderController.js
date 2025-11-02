@@ -2,7 +2,7 @@ const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
 const Vendor = require('../models/Vendor');
 const User = require('../models/User');
-const { sendOrderConfirmationEmail, sendNewOrderNotificationEmail } = require('../services/emailService');
+const { sendOrderConfirmationEmail, sendNewOrderNotificationEmail, sendOrderReadyEmail } = require('../services/emailService');
 
 // Non-blocking email helper function
 const sendEmailAsync = async (emailFunction, ...args) => {
@@ -32,7 +32,8 @@ const createOrder = async (req, res) => {
       tipPercentage,
       dietaryRequirements,
       specialRequests,
-      customerPhone
+      customerPhone,
+      customer_email
     } = req.body;
 
     // Validate required fields
@@ -93,6 +94,7 @@ const createOrder = async (req, res) => {
       dietaryRequirements: dietaryRequirements || [],
       specialRequests: specialRequests || '',
       customerPhone: customerPhone || '',
+      customerEmail: customer_email || '',
       notes: notes || '',
       status: 'pending',
       paymentStatus: 'pending'
@@ -123,6 +125,10 @@ const createOrder = async (req, res) => {
             await sendOrderConfirmationEmail(customer.email, customerName, order);
             console.log(`Order confirmation sent to customer: ${customer.email}`);
           }
+        }else{
+          // for new customer
+           await sendOrderConfirmationEmail(customer_email,"Customer", order);
+           console.log(`Order confirmation sent to customer: ${customer_email}`);
         }
       } catch (emailError) {
         console.error('Error sending email notifications:', emailError);
@@ -427,6 +433,24 @@ const updateOrderStatus = async (req, res) => {
     }
 
     await order.save();
+
+    if(status === 'ready'){
+      // Send order rady to customer if they have an email
+      if (order.customerId) {
+        const customer = await User.findById(order.customerId).select('email firstName lastName');
+        if (customer && customer.email) {
+          const customerName = customer.firstName ? `${customer.firstName} ${customer.lastName || ''}`.trim() : 'Valued Customer';
+          await sendOrderReadyEmail(customer.email, customerName, order);
+          console.log(`Order confirmation sent to customer: ${customer.email}`);
+        }
+      }else{
+        // for new customer
+        if(order.customerEmail){
+          await sendOrderReadyEmail(order.customerEmail,"Customer", order);
+          console.log(`Order confirmation sent to customer: ${order.customerEmail}`);
+        }
+      }
+    }
 
     res.json({
       success: true,
