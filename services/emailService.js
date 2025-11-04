@@ -6,6 +6,13 @@ const createTransporter = () => {
   // For development, use Gmail or create a test account
   // For production, use services like SendGrid, AWS SES, or your own SMTP server
   
+  //for testing
+  // return nodemailer.createTransport({
+  //   host: process.env.EMAIL_HOST,
+  //   port: process.env.EMAIL_PORT,
+  //   secure: false, // MailHog uses plain SMTP
+  // });
+
   if (process.env.NODE_ENV === 'production') {
     // Production email service (SendGrid, AWS SES, etc.)
     return nodemailer.createTransport({
@@ -15,6 +22,7 @@ const createTransporter = () => {
         pass: process.env.EMAIL_PASSWORD
       }
     });
+
   } else {
     // Development - Gmail with app password
     return nodemailer.createTransport({
@@ -24,6 +32,7 @@ const createTransporter = () => {
         pass: process.env.EMAIL_PASSWORD || 'your-app-password'
       }
     });
+
   }
 };
 
@@ -846,11 +855,198 @@ const sendNewOrderNotificationEmail = async (vendorEmail, vendorName, orderData)
   }
 };
 
+//notify customer order ready
+const sendOrderReadyEmail = async (customerEmail, customerName, orderData) => {
+  try {
+    const transporter = createTransporter();
+    
+    const orderItems = orderData.items.map(item => 
+      `<tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee;">${item.name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${item.price.toFixed(2)}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${(item.price * item.quantity).toFixed(2)}</td>
+      </tr>`
+    ).join('');
+    
+    const subtotal = orderData.items.reduce((total, item) => total + (item.price * item.quantity), 0);
+    const total = subtotal + (orderData.tipAmount || 0);
+    
+    const emailContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Your Order is Ready - ByteMe</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+        }
+        .logo {
+          font-size: 28px;
+          font-weight: bold;
+          color: #FE4B11;
+          margin-bottom: 10px;
+        }
+        .tagline {
+          color: #666;
+          font-size: 14px;
+        }
+        .content {
+          background: #f9f9f9;
+          padding: 30px;
+          border-radius: 10px;
+          margin-bottom: 20px;
+        }
+        .order-details {
+          background: white;
+          padding: 20px;
+          border-radius: 8px;
+          margin: 20px 0;
+        }
+        .order-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 15px 0;
+        }
+        .order-table th {
+          background: #f8f9fa;
+          padding: 12px;
+          text-align: left;
+          border-bottom: 2px solid #dee2e6;
+          font-weight: bold;
+        }
+        .order-table td {
+          padding: 10px;
+          border-bottom: 1px solid #eee;
+        }
+        .total-section {
+          background: #f8f9fa;
+          padding: 15px;
+          border-radius: 5px;
+          margin-top: 20px;
+        }
+        .status-badge {
+          display: inline-block;
+          background: #007bff;
+          color: white;
+          padding: 5px 15px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: bold;
+          text-transform: uppercase;
+        }
+        .footer {
+          text-align: center;
+          color: #666;
+          font-size: 12px;
+          margin-top: 30px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="logo">ByteMe</div>
+        <div class="tagline">Digital Dining Solutions</div>
+      </div>
+
+      <div class="content">
+        <h2>Good news, ${customerName || 'Valued Customer'}! 🎉</h2>
+        <p>Your order is now ready to be served!</p>
+        <p>Please proceed to the counter or your table to collect it.</p>
+
+        <div class="order-details">
+          <h3>Order #${orderData._id.toString().slice(-8).toUpperCase()}</h3>
+          <p><strong>Table:</strong> ${orderData.tableNumber}</p>
+          <p><strong>Status:</strong> <span class="status-badge">READY</span></p>
+          <p><strong>Order Time:</strong> ${new Date(orderData.createdAt).toLocaleString()}</p>
+          <p><strong>Ready Time:</strong> ${new Date().toLocaleString()}</p>
+          ${orderData.customerPhone ? `<p><strong>Phone:</strong> ${orderData.customerPhone}</p>` : ''}
+          ${orderData.specialRequests ? `<p><strong>Special Requests:</strong> ${orderData.specialRequests}</p>` : ''}
+          ${orderData.dietaryRequirements && orderData.dietaryRequirements.length > 0 ? 
+            `<p><strong>Dietary Requirements:</strong> ${orderData.dietaryRequirements.join(', ')}</p>` : ''}
+        </div>
+
+        <div class="order-details">
+          <h3>Order Items</h3>
+          <table class="order-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th style="text-align: center;">Qty</th>
+                <th style="text-align: right;">Price</th>
+                <th style="text-align: right;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${orderItems}
+            </tbody>
+          </table>
+
+          <div class="total-section">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span>Subtotal:</span>
+              <span>$${subtotal.toFixed(2)}</span>
+            </div>
+            ${orderData.tipAmount > 0 ? `
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span>Tip (${orderData.tipPercentage}%):</span>
+                <span>$${orderData.tipAmount.toFixed(2)}</span>
+              </div>
+            ` : ''}
+            <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 18px; border-top: 2px solid #dee2e6; padding-top: 10px;">
+              <span>Total:</span>
+              <span>$${total.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        <p>We hope you enjoy your meal! 🍽️<br>
+        Thank you for choosing ByteMe.</p>
+      </div>
+
+      <div class="footer">
+        <p>This email was sent from ByteMe - Digital Dining Solutions</p>
+        <p>© 2024 ByteMe. All rights reserved.</p>
+      </div>
+    </body>
+    </html>
+
+    `;
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || 'ByteMe <noreply@byteme.com>',
+      to: customerEmail,
+      subject: `Order Confirmation #${orderData._id.toString().slice(-8).toUpperCase()} - ByteMe`,
+      html: emailContent
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Order confirmation email sent:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('Error sending order confirmation email:', error);
+    throw error;
+  }
+};
+
+
 module.exports = {
   sendPasswordResetEmail,
   sendVendorWelcomeEmail,
   sendCustomerWelcomeEmail,
   sendAdminWelcomeEmail,
   sendOrderConfirmationEmail,
-  sendNewOrderNotificationEmail
+  sendNewOrderNotificationEmail,
+  sendOrderReadyEmail
 };
