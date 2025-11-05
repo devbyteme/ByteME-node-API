@@ -9,7 +9,7 @@ const menuItemSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    required: [true, 'Description is required'],
+    required: false,
     trim: true,
     maxlength: [500, 'Description cannot exceed 500 characters']
   },
