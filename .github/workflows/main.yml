@@ -72,9 +72,12 @@ jobs:
           if [ "${{ github.ref_name }}" = "production" ]; then
             echo "${{ secrets.EC2_SSH_KEY_PROD }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
             ssh-keyscan -H ${{ secrets.PUBLIC_DNS_PROD }} >> ~/.ssh/known_hosts
-          else
+          elif [ "${{ github.ref_name }}" = "main" ]; then
             echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/ec2-key.pem
             ssh-keyscan -H ${{ secrets.PUBLIC_DNS }} >> ~/.ssh/known_hosts
+          else
+            echo "Branch not supported for deployment"
+            exit 1
           fi
           chmod 600 ~/.ssh/ec2-key.pem
 
