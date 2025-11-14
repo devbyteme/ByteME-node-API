@@ -9,7 +9,7 @@ const tableController = require('../controllers/tableController');
 // Public routes (no authentication required)
 router.get('/tables', tableController.getAllTables);
 router.get('/tables/:id', tableController.getTableById);
-router.get('/table/:number', tableController.getTableByNumber)
+router.get('/table/:number/:vendorId', tableController.getTableByNumber)
 router.get('/tables/availability', tableController.getTableAvailability);
 
 // Protected routes (vendor authentication required)

@@ -73,12 +73,11 @@ const getTableById = async (req, res) => {
 };
 
 // @desc    Get table by ID
-// @route   GET /api/table/:number
+// @route   GET /api/table/:number/:vendorId
 // @access  Public
 const getTableByNumber = async (req,res) =>{
   try {
-    const table = await Table.findOne({ number: req.params.number })
-      .populate('vendorId', 'name restaurantName');
+    const table = await Table.findOne({ number: req.params.number,vendorId:req.params.vendorId})
 
     if (!table) {
       return res.status(404).json({
