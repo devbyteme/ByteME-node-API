@@ -103,6 +103,7 @@ app.get('/', (req, res) => {
       tables: {
         getAllTables: '/api/tables',
         getTableById: '/api/tables/:id',
+        getTableByNumber: '/api/table/:number',
         createTable: '/api/tables',
         updateTable: '/api/tables/:id',
         deleteTable: '/api/tables/:id',
