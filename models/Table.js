@@ -14,7 +14,6 @@ const tableSchema = new mongoose.Schema({
   location: {
     type: String,
     trim: true,
-    default: 'indoor'
   },
   capacity: {
     type: Number,

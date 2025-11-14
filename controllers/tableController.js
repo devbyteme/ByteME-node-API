@@ -72,6 +72,44 @@ const getTableById = async (req, res) => {
   }
 };
 
+// @desc    Get table by ID
+// @route   GET /api/table/:number
+// @access  Public
+const getTableByNumber = async (req,res) =>{
+  try {
+    const table = await Table.findOne({ number: req.params.number })
+      .populate('vendorId', 'name restaurantName');
+
+    if (!table) {
+      return res.status(404).json({
+        success: false,
+        message: 'Table not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: table
+    });
+
+  } catch (error) {
+    console.error('Error getting table:', error);
+    
+    if (error.kind === 'ObjectId') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid table ID'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    });
+  }
+}
+
 // @desc    Create new table
 // @route   POST /api/tables
 // @access  Private (Vendor only)
@@ -123,7 +161,7 @@ const createTable = async (req, res) => {
     // Create new table
     const table = new Table({
       number: number.trim(),
-      location: location ? location.trim() : 'indoor',
+      location: location.trim(),
       capacity: parseInt(capacity),
       vendorId: actualVendorId
     });
@@ -204,7 +242,7 @@ const updateTable = async (req, res) => {
 
     // Update fields
     if (number !== undefined) table.number = number.trim();
-    if (location !== undefined) table.location = location ? location.trim() : 'indoor';
+    if (location !== undefined) table.location = location.trim();
     if (capacity !== undefined) {
       if (capacity < 1 || capacity > 20) {
         return res.status(400).json({
@@ -410,6 +448,7 @@ const getTableAvailability = async (req, res) => {
 module.exports = {
   getAllTables,
   getTableById,
+  getTableByNumber,
   createTable,
   updateTable,
   deleteTable,
